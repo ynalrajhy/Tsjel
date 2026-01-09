@@ -1,42 +1,36 @@
 import { StatusBar } from "expo-status-bar";
-import {
-  StyleSheet,
-  SafeAreaView,
-  Animated,
-  Dimensions,
-  View,
-} from "react-native";
+import { StyleSheet, View, Animated, Dimensions } from "react-native";
+import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
 import { useState, useRef, useEffect } from "react";
 import { GameSelection } from "./App/components/GameSelection";
 import { Scoreboard } from "./App/components/Scoreboard";
+import { AuthScreen } from "./App/components/AuthScreen";
 import { getGameConfig } from "./App/config/games";
 import { LanguageProvider } from "./App/context/LanguageContext";
 import { useLanguage } from "./App/context/LanguageContext";
+import { FirebaseProvider, useFirebase } from "./App/context/FirebaseContext";
 
 const screenWidth = Dimensions.get("window").width;
 
 function AppContent() {
   const { isRTL } = useLanguage();
-  const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
-  const gameConfig = selectedGameId ? getGameConfig(selectedGameId) : null;
+  const { user } = useFirebase();
 
-  // Animation values - initialize scoreboard off-screen
+  const [showAuth, setShowAuth] = useState(true);
+  const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
   const gameSelectionTranslateX = useRef(new Animated.Value(0)).current;
   const scoreboardTranslateX = useRef(new Animated.Value(screenWidth)).current;
 
-  // Update initial position based on RTL
+  const gameConfig = selectedGameId ? getGameConfig(selectedGameId) : null;
+
   useEffect(() => {
-    if (isRTL) {
-      scoreboardTranslateX.setValue(-screenWidth);
-    } else {
-      scoreboardTranslateX.setValue(screenWidth);
+    if (!user) {
+      setShowAuth(true);
     }
-  }, [isRTL]);
+  }, [user]);
 
   const handleSelectGame = (gameId: string) => {
     setSelectedGameId(gameId);
-
-    // Animate game selection sliding out and scoreboard sliding in
     Animated.parallel([
       Animated.timing(gameSelectionTranslateX, {
         toValue: isRTL ? screenWidth : -screenWidth,
@@ -52,7 +46,6 @@ function AppContent() {
   };
 
   const handleBack = () => {
-    // Animate scoreboard sliding out and game selection sliding in
     Animated.parallel([
       Animated.timing(scoreboardTranslateX, {
         toValue: isRTL ? -screenWidth : screenWidth,
@@ -66,15 +59,22 @@ function AppContent() {
       }),
     ]).start(() => {
       setSelectedGameId(null);
-      // Reset animation values
       gameSelectionTranslateX.setValue(0);
       scoreboardTranslateX.setValue(isRTL ? -screenWidth : screenWidth);
     });
   };
 
+  if (!user && showAuth) {
+    return (
+      <AuthScreen
+        onAuthSuccess={() => setShowAuth(false)}
+        onSkip={() => setShowAuth(false)}
+      />
+    );
+  }
+
   return (
     <View style={styles.container}>
-      {/* Game Selection Screen */}
       <Animated.View
         style={[
           styles.screenContainer,
@@ -88,7 +88,6 @@ function AppContent() {
         <GameSelection onSelectGame={handleSelectGame} />
       </Animated.View>
 
-      {/* Scoreboard Screen */}
       {gameConfig && (
         <Animated.View
           style={[
@@ -108,19 +107,23 @@ function AppContent() {
 
 export default function App() {
   return (
-    <LanguageProvider>
-      <SafeAreaView style={styles.container}>
-        <AppContent />
-        <StatusBar style="auto" />
-      </SafeAreaView>
-    </LanguageProvider>
+    <SafeAreaProvider>
+    <FirebaseProvider>
+      <LanguageProvider>
+        <SafeAreaView style={styles.container}>
+          <AppContent />
+          <StatusBar style="auto" />
+        </SafeAreaView>
+      </LanguageProvider>
+    </FirebaseProvider>
+    </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F5F1E8", // Aged paper background
+    backgroundColor: "#F5F1E8",
   },
   screenContainer: {
     position: "absolute",

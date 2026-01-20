@@ -5,18 +5,24 @@ import { useState, useRef, useEffect } from "react";
 import { GameSelection } from "./App/components/GameSelection";
 import { Scoreboard } from "./App/components/Scoreboard";
 import { AuthScreen } from "./App/components/AuthScreen";
+import { GameHistoryScreen } from "./App/components/GameHistoryScreen";
 import { getGameConfig } from "./App/config/games";
 import { LanguageProvider } from "./App/context/LanguageContext";
 import { useLanguage } from "./App/context/LanguageContext";
 import { FirebaseProvider, useFirebase } from "./App/context/FirebaseContext";
+import { AdProvider, useAds } from "./App/context/AdContext";
 
 const screenWidth = Dimensions.get("window").width;
 
 function AppContent() {
   const { isRTL } = useLanguage();
   const { user } = useFirebase();
+  const { incrementGamesPlayed, showInterstitialAd, shouldShowInterstitial } =
+    useAds();
 
+  // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
   const [showAuth, setShowAuth] = useState(true);
+  const [showHistory, setShowHistory] = useState(false);
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
   const gameSelectionTranslateX = useRef(new Animated.Value(0)).current;
   const scoreboardTranslateX = useRef(new Animated.Value(screenWidth)).current;
@@ -24,10 +30,12 @@ function AppContent() {
   const gameConfig = selectedGameId ? getGameConfig(selectedGameId) : null;
 
   useEffect(() => {
-    if (!user) {
-      setShowAuth(true);
+    if (isRTL) {
+      scoreboardTranslateX.setValue(-screenWidth);
+    } else {
+      scoreboardTranslateX.setValue(screenWidth);
     }
-  }, [user]);
+  }, [isRTL]);
 
   const handleSelectGame = (gameId: string) => {
     setSelectedGameId(gameId);
@@ -45,7 +53,15 @@ function AppContent() {
     ]).start();
   };
 
-  const handleBack = () => {
+  const handleBack = async () => {
+    // Increment games played counter
+    incrementGamesPlayed();
+
+    // Show interstitial ad if it's time (every 3rd game)
+    if (shouldShowInterstitial) {
+      await showInterstitialAd();
+    }
+
     Animated.parallel([
       Animated.timing(scoreboardTranslateX, {
         toValue: isRTL ? -screenWidth : screenWidth,
@@ -64,13 +80,23 @@ function AppContent() {
     });
   };
 
-  if (!user && showAuth) {
+  // Handle showing auth screen from settings (for guests)
+  const handleShowAuth = () => {
+    setShowAuth(true);
+  };
+
+  // NOW we can do conditional returns (after all hooks)
+  if (showAuth && !user) {
     return (
       <AuthScreen
         onAuthSuccess={() => setShowAuth(false)}
         onSkip={() => setShowAuth(false)}
       />
     );
+  }
+
+  if (showHistory) {
+    return <GameHistoryScreen onBack={() => setShowHistory(false)} />;
   }
 
   return (
@@ -85,7 +111,11 @@ function AppContent() {
         ]}
         pointerEvents={gameConfig ? "none" : "auto"}
       >
-        <GameSelection onSelectGame={handleSelectGame} />
+        <GameSelection
+          onSelectGame={handleSelectGame}
+          onShowHistory={() => setShowHistory(true)}
+          onShowAuth={handleShowAuth}
+        />
       </Animated.View>
 
       {gameConfig && (
@@ -108,14 +138,16 @@ function AppContent() {
 export default function App() {
   return (
     <SafeAreaProvider>
-    <FirebaseProvider>
-      <LanguageProvider>
-        <SafeAreaView style={styles.container}>
-          <AppContent />
-          <StatusBar style="auto" />
-        </SafeAreaView>
-      </LanguageProvider>
-    </FirebaseProvider>
+      <FirebaseProvider>
+        <AdProvider>
+          <LanguageProvider>
+            <SafeAreaView style={styles.container}>
+              <AppContent />
+              <StatusBar style="auto" />
+            </SafeAreaView>
+          </LanguageProvider>
+        </AdProvider>
+      </FirebaseProvider>
     </SafeAreaProvider>
   );
 }

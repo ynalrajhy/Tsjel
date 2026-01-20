@@ -1,30 +1,55 @@
 {
   "expo": {
     "name": "Tsjel",
-    "slug": "Tsjel",
+    "slug": "tsjel",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#F5F1E8"
     },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.tsjel.app",
+      "config": {
+        "googleMobileAdsAppId": "ca-app-pub-6363360179665346~3248962284"
+      },
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#F5F1E8"
       },
-      "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "package": "com.tsjel.app",
+      "config": {
+        "googleMobileAdsAppId": ""
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "react-native-google-mobile-ads",
+        {
+          "iosAppId": "ca-app-pub-6363360179665346~3248962284",
+          "androidAppId": ""
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "ffc8c40a-d7cc-4518-af56-488df0e0e3c0"
+      }
     }
   }
 }

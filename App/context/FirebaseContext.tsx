@@ -1,4 +1,3 @@
-// App/context/FirebaseContext.tsx
 import React, {
   createContext,
   useContext,

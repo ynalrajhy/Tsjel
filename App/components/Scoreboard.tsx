@@ -6,8 +6,10 @@ import {
   ScrollView,
   TouchableOpacity,
   Animated,
+  Alert,
 } from "react-native";
 import { useScoreStorage } from "../hooks/useScoreStorage";
+import { useFirebase } from "../context/FirebaseContext";
 import { TeamCard } from "./TeamCard";
 import { PointButton } from "./PointButton";
 import { ActionButton } from "./ActionButton";
@@ -17,6 +19,7 @@ import { GameConfig } from "../config/games";
 import { useLanguage } from "../context/LanguageContext";
 import { colors, typography } from "../theme/styles";
 import { useSwipeToGoBack } from "../hooks/useSwipeToGoBack";
+
 
 interface ScoreboardProps {
   gameConfig: GameConfig;
@@ -39,10 +42,12 @@ export const Scoreboard: React.FC<ScoreboardProps> = ({
 
   // Otherwise, render point selection scoreboard (default for backward compatibility)
   const { t } = useLanguage();
+  const { saveGameResult, user } = useFirebase();
   const { team1, team2, updateTeam1, updateTeam2, resetScores, isLoading } =
     useScoreStorage(gameConfig.id);
   const [selectedPoints, setSelectedPoints] = useState<number | null>(null);
   const [selectedTeam, setSelectedTeam] = useState<1 | 2 | null>(null);
+  const [gameSaved, setGameSaved] = useState(false);
   const swipeHandlers = useSwipeToGoBack({ onBack });
 
   const handleWin = () => {
@@ -83,10 +88,35 @@ export const Scoreboard: React.FC<ScoreboardProps> = ({
     setSelectedPoints(null);
   };
 
+  const handleSaveGame = async () => {
+    const winner = team1.score > team2.score ? team1.name : team2.name;
+
+    try {
+      await saveGameResult({
+        gameType: "kout",
+        team1: { name: team1.name, score: team1.score },
+        team2: { name: team2.name, score: team2.score },
+        winner: winner,
+      });
+
+      setGameSaved(true);
+      Alert.alert(
+        t.common?.success || "Success",
+        t.common?.gameSaved || "Game saved!"
+      );
+    } catch (error) {
+      Alert.alert(
+        t.common?.error || "Error",
+        t.common?.failedToSave || "Failed to save game"
+      );
+    }
+  };
+
   const handleReset = () => {
     resetScores();
     setSelectedPoints(null);
     setSelectedTeam(null);
+    setGameSaved(false);
   };
 
   if (isLoading) {
@@ -168,6 +198,35 @@ export const Scoreboard: React.FC<ScoreboardProps> = ({
                 variant="secondary"
               />
             </View>
+          </View>
+        )}
+
+        {/* Save Game Button - only show if there are scores and user is logged in */}
+        {(team1.score > 0 || team2.score > 0) && user && !gameSaved && (
+          <View style={styles.section}>
+            <ActionButton
+              label={t.common?.saveGame || "💾 Save Game"}
+              onPress={handleSaveGame}
+              variant="secondary"
+            />
+          </View>
+        )}
+
+        {/* Game Saved Indicator */}
+        {gameSaved && (
+          <View style={styles.section}>
+            <Text style={styles.savedText}>
+              ✓ {t.common?.gameSaved || "Game Saved"}
+            </Text>
+          </View>
+        )}
+
+        {/* Login prompt for guests */}
+        {(team1.score > 0 || team2.score > 0) && !user && (
+          <View style={styles.section}>
+            <Text style={styles.guestNote}>
+              {t.common?.loginToSaveGames || "Login to save your games"}
+            </Text>
           </View>
         )}
       </ScrollView>
@@ -254,5 +313,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
     flexWrap: "wrap",
+  },
+  savedText: {
+    fontSize: 16,
+    color: colors.accent.green,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  guestNote: {
+    fontSize: 12,
+    color: colors.text.muted,
+    textAlign: "center",
+    fontStyle: "italic",
   },
 });

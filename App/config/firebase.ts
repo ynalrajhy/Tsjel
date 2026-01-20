@@ -1,18 +1,18 @@
-// App/config/firebase.ts
 import { initializeApp, getApp, getApps } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
-// @ts-ignore: getReactNativePersistence exists in the RN bundle but is often missing from public TypeScript definitions.
+// @ts-ignore: getReactNativePersistence exists in the RN bundle
 import { initializeAuth, getReactNativePersistence } from "firebase/auth";
 import ReactNativeAsyncStorage from "@react-native-async-storage/async-storage";
 
-// Paste YOUR config from Firebase Console here
+// Firebase configuration using environment variables
+// Create a .env file in your project root with these values
 const firebaseConfig = {
-  apiKey: "AIzaSyC7ZSb-6-JuH9Ep7BJplWmjNxQFxc7E3vQ",
-  authDomain: "tsjel-ec5f9.firebaseapp.com",
-  projectId: "tsjel-ec5f9",
-  storageBucket: "tsjel-ec5f9.firebasestorage.app",
-  messagingSenderId: "714566802122",
-  appId: "1:714566802122:web:d37eea380dbc6e31b7f233",
+  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
 };
 
 let app;
@@ -27,6 +27,5 @@ const auth = initializeAuth(app, {
 });
 
 const db = getFirestore(app);
-
 
 export { auth, db };

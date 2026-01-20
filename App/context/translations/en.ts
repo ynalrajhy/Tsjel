@@ -13,6 +13,7 @@ export const en = {
     cancel: "Cancel",
     reset: "Reset",
     error: "Error",
+    success: "Success",
     gameOver: "Game Over",
     newGame: "New Game",
     resetGame: "Reset Game",
@@ -21,6 +22,7 @@ export const en = {
     win: "Win",
     lose: "Lose",
     round: "Round",
+    rounds: "rounds",
     player: "Player",
     teamName: "Team Name",
     selected: "✓ Selected",
@@ -31,6 +33,15 @@ export const en = {
     gameHistory: "Game History",
     finalResults: "Final Results",
     actions: "Actions",
+    gameSaved: "Game saved!",
+    saveGame: "💾 Save Game",
+    failedToSave: "Failed to save game",
+    loginToSaveGames: "Login to save your games",
+    settings: "Settings",
+    signedInAs: "Signed in as:",
+    signOut: "Sign Out",
+    playingAsGuest: "Playing as guest",
+    close: "Close",
   },
 
   // Hand Scoreboard
@@ -83,5 +94,11 @@ export const en = {
     english: "English",
     arabic: "العربية",
     changeLanguage: "Change Language",
+  },
+
+  // Auth
+  auth: {
+    loginToSaveGames: "Please login to see your game history",
+    noGamesYet: "No games yet. Start playing!",
   },
 };

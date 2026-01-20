@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   Animated,
 } from "react-native";
 import { useHandStorage } from "../hooks/useHandStorage";
+import { useFirebase } from "../context/FirebaseContext";
 import { ActionButton } from "./ActionButton";
 import { GameConfig } from "../config/games";
 import { useLanguage } from "../context/LanguageContext";
@@ -51,13 +52,12 @@ interface Round {
   scores: number[];
 }
 
-// HAND_TYPES will be created dynamically using translations
-
 export const HandScoreboard: React.FC<HandScoreboardProps> = ({
   gameConfig,
   onBack,
 }) => {
   const { t } = useLanguage();
+  const { saveGameResult, user } = useFirebase();
   const { players, updatePlayer, resetScores, isLoading } = useHandStorage(
     gameConfig.id
   );
@@ -69,6 +69,7 @@ export const HandScoreboard: React.FC<HandScoreboardProps> = ({
   const [currentRound, setCurrentRound] = useState(1);
   const [rounds, setRounds] = useState<Round[]>([]);
   const [nzolValues, setNzolValues] = useState<string[]>(["", "", "", ""]);
+  const gameSavedRef = useRef(false);
 
   // Create HAND_TYPES with translations
   const HAND_TYPES: Record<HandType, HandTypeConfig> = {
@@ -104,6 +105,22 @@ export const HandScoreboard: React.FC<HandScoreboardProps> = ({
     },
   };
 
+  // Auto-save when game ends (after round 8)
+  useEffect(() => {
+    if (currentRound > 8 && user && !gameSavedRef.current) {
+      gameSavedRef.current = true;
+      const sortedPlayers = [...players].sort((a, b) => a.score - b.score);
+      const winner = sortedPlayers[0]?.name || "Unknown";
+
+      saveGameResult({
+        gameType: "hand",
+        players: players.map((p) => ({ name: p.name, score: p.score })),
+        winner: winner,
+        rounds: 8,
+      });
+    }
+  }, [currentRound, user, players]);
+
   const handleWin = () => {
     if (selectedWinner === null || selectedHandType === null) {
       Alert.alert(
@@ -137,7 +154,7 @@ export const HandScoreboard: React.FC<HandScoreboardProps> = ({
         nzolMultiplier = 32;
         break;
       case "finished":
-        nzolMultiplier = 1; // Add as-is, no multiplication
+        nzolMultiplier = 1;
         break;
     }
 
@@ -146,18 +163,15 @@ export const HandScoreboard: React.FC<HandScoreboardProps> = ({
     // Apply scoring: winner gets winnerPoints, others get Nzol or regular scoring
     const newPlayers = players.map((player, index) => {
       if (index === selectedWinner) {
-        // Winner always gets winnerPoints
         return {
           ...player,
           score: player.score + handConfig.winnerPoints,
         };
       } else {
-        // For other players: check if they have Nzol
         const nzolValueStr = nzolValues[index];
         const hasNzol = nzolValueStr && nzolValueStr.trim() !== "";
 
         if (hasNzol) {
-          // Player has Nzol: apply Nzol scoring (multiplier × nzolValue)
           const nzolValue = parseFloat(nzolValueStr) || 0;
           const nzolPoints = nzolValue * nzolMultiplier;
           return {
@@ -165,7 +179,6 @@ export const HandScoreboard: React.FC<HandScoreboardProps> = ({
             score: player.score + nzolPoints,
           };
         } else {
-          // Player has no Nzol: apply regular scoring (othersPoints)
           return {
             ...player,
             score: player.score + handConfig.othersPoints,
@@ -220,6 +233,7 @@ export const HandScoreboard: React.FC<HandScoreboardProps> = ({
           setCurrentRound(1);
           setRounds([]);
           setNzolValues(["", "", "", ""]);
+          gameSavedRef.current = false;
         },
       },
     ]);
@@ -265,6 +279,15 @@ export const HandScoreboard: React.FC<HandScoreboardProps> = ({
                 <Text style={styles.resetIconText}>↻</Text>
               </TouchableOpacity>
             </View>
+
+            {/* Game saved indicator */}
+            {gameSavedRef.current && (
+              <View style={styles.savedIndicator}>
+                <Text style={styles.savedText}>
+                  ✓ {t.common?.gameSaved || "Game Saved"}
+                </Text>
+              </View>
+            )}
 
             {/* Podium View */}
             <View style={styles.podiumContainer}>
@@ -422,7 +445,6 @@ export const HandScoreboard: React.FC<HandScoreboardProps> = ({
                     style={styles.nzolInput}
                     value={nzolValues[index]}
                     onChangeText={(text) => {
-                      // Only allow numbers
                       const numericValue = text.replace(/[^0-9]/g, "");
                       const newNzolValues = [...nzolValues];
                       newNzolValues[index] = numericValue;
@@ -586,6 +608,15 @@ const styles = StyleSheet.create({
     color: colors.accent.red,
     marginBottom: 6,
     letterSpacing: 0.5,
+  },
+  savedIndicator: {
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  savedText: {
+    fontSize: 14,
+    color: colors.accent.green,
+    fontWeight: "600",
   },
   playersContainer: {
     flexDirection: "row",

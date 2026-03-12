@@ -11,12 +11,10 @@
       "resizeMode": "contain",
       "backgroundColor": "#F5F1E8"
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.tsjel.app",
+      "bundleIdentifier": "com.Yousef.Tsjel",
       "config": {
         "googleMobileAdsAppId": "ca-app-pub-6363360179665346~3248962284"
       },

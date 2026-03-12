@@ -1,7 +1,7 @@
 import { StatusBar } from "expo-status-bar";
-import { StyleSheet, View, Animated, Dimensions } from "react-native";
+import { StyleSheet, View, Animated, Easing } from "react-native";
 import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { GameSelection } from "./App/components/GameSelection";
 import { Scoreboard } from "./App/components/Scoreboard";
 import { AuthScreen } from "./App/components/AuthScreen";
@@ -12,80 +12,71 @@ import { useLanguage } from "./App/context/LanguageContext";
 import { FirebaseProvider, useFirebase } from "./App/context/FirebaseContext";
 import { AdProvider, useAds } from "./App/context/AdContext";
 
-const screenWidth = Dimensions.get("window").width;
-
 function AppContent() {
-  const { isRTL } = useLanguage();
   const { user } = useFirebase();
   const { incrementGamesPlayed, showInterstitialAd, shouldShowInterstitial } =
     useAds();
 
-  // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
   const [showAuth, setShowAuth] = useState(true);
   const [showHistory, setShowHistory] = useState(false);
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
-  const gameSelectionTranslateX = useRef(new Animated.Value(0)).current;
-  const scoreboardTranslateX = useRef(new Animated.Value(screenWidth)).current;
 
-  const gameConfig = selectedGameId ? getGameConfig(selectedGameId) : null;
+  // Animation value (0 = Home, 1 = Scoreboard)
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  const gameConfig = useMemo(
+    () => (selectedGameId ? getGameConfig(selectedGameId) : null),
+    [selectedGameId]
+  );
 
   useEffect(() => {
-    if (isRTL) {
-      scoreboardTranslateX.setValue(-screenWidth);
-    } else {
-      scoreboardTranslateX.setValue(screenWidth);
+    if (!user) {
+      setShowAuth(true);
     }
-  }, [isRTL]);
+  }, [user]);
 
   const handleSelectGame = (gameId: string) => {
     setSelectedGameId(gameId);
-    Animated.parallel([
-      Animated.timing(gameSelectionTranslateX, {
-        toValue: isRTL ? screenWidth : -screenWidth,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(scoreboardTranslateX, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-    ]).start();
+
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 250,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
   };
 
   const handleBack = async () => {
-    // Increment games played counter
-    incrementGamesPlayed();
+    Animated.timing(fadeAnim, {
+      toValue: 0,
+      duration: 200,
+      easing: Easing.in(Easing.quad),
+      useNativeDriver: true,
+    }).start(() => {
+      setSelectedGameId(null);
+    });
 
-    // Show interstitial ad if it's time (every 3rd game)
+    incrementGamesPlayed();
     if (shouldShowInterstitial) {
       await showInterstitialAd();
     }
-
-    Animated.parallel([
-      Animated.timing(scoreboardTranslateX, {
-        toValue: isRTL ? -screenWidth : screenWidth,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(gameSelectionTranslateX, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-    ]).start(() => {
-      setSelectedGameId(null);
-      gameSelectionTranslateX.setValue(0);
-      scoreboardTranslateX.setValue(isRTL ? -screenWidth : screenWidth);
-    });
   };
 
-  // Handle showing auth screen from settings (for guests)
   const handleShowAuth = () => {
     setShowAuth(true);
   };
 
-  // NOW we can do conditional returns (after all hooks)
+  // Cross-Fade Interpolations
+  const homeOpacity = fadeAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0],
+  });
+
+  const scoreboardOpacity = fadeAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 1],
+  });
+
   if (showAuth && !user) {
     return (
       <AuthScreen
@@ -101,15 +92,16 @@ function AppContent() {
 
   return (
     <View style={styles.container}>
+      {/* Home Screen */}
       <Animated.View
         style={[
           styles.screenContainer,
           {
-            transform: [{ translateX: gameSelectionTranslateX }],
-            zIndex: gameConfig ? 0 : 1,
+            opacity: homeOpacity,
+            zIndex: selectedGameId ? 0 : 1,
           },
         ]}
-        pointerEvents={gameConfig ? "none" : "auto"}
+        pointerEvents={selectedGameId ? "none" : "auto"}
       >
         <GameSelection
           onSelectGame={handleSelectGame}
@@ -118,17 +110,18 @@ function AppContent() {
         />
       </Animated.View>
 
-      {gameConfig && (
+      {/* Scoreboard Screen */}
+      {selectedGameId && (
         <Animated.View
           style={[
             styles.screenContainer,
             {
-              transform: [{ translateX: scoreboardTranslateX }],
+              opacity: scoreboardOpacity,
               zIndex: 2,
             },
           ]}
         >
-          <Scoreboard gameConfig={gameConfig} onBack={handleBack} />
+          <Scoreboard gameConfig={gameConfig!} onBack={handleBack} />
         </Animated.View>
       )}
     </View>
@@ -141,7 +134,10 @@ export default function App() {
       <FirebaseProvider>
         <AdProvider>
           <LanguageProvider>
-            <SafeAreaView style={styles.container}>
+            <SafeAreaView
+              style={styles.container}
+              edges={["top", "left", "right"]}
+            >
               <AppContent />
               <StatusBar style="auto" />
             </SafeAreaView>

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo, memo } from "react";
 import {
   View,
   Text,
@@ -20,219 +20,217 @@ import { useLanguage } from "../context/LanguageContext";
 import { colors, typography } from "../theme/styles";
 import { useSwipeToGoBack } from "../hooks/useSwipeToGoBack";
 
-
 interface ScoreboardProps {
   gameConfig: GameConfig;
   onBack: () => void;
 }
 
-export const Scoreboard: React.FC<ScoreboardProps> = ({
-  gameConfig,
-  onBack,
-}) => {
-  // If hand mode, render HandScoreboard
-  if (gameConfig.scoringMode === "hand") {
-    return <HandScoreboard gameConfig={gameConfig} onBack={onBack} />;
-  }
+const PointSelectionScoreboard = memo(
+  ({ gameConfig, onBack }: ScoreboardProps) => {
+    const { t } = useLanguage();
+    const { saveGameResult, user } = useFirebase();
+    const { team1, team2, updateTeam1, updateTeam2, resetScores, isLoading } =
+      useScoreStorage(gameConfig.id);
 
-  // If manual input mode, render BalootScoreboard
-  if (gameConfig.scoringMode === "manualInput") {
-    return <BalootScoreboard gameConfig={gameConfig} onBack={onBack} />;
-  }
+    const [selectedPoints, setSelectedPoints] = useState<number | null>(null);
+    const [selectedTeam, setSelectedTeam] = useState<1 | 2 | null>(null);
+    const [gameSaved, setGameSaved] = useState(false);
+    const swipeHandlers = useSwipeToGoBack({ onBack });
 
-  // Otherwise, render point selection scoreboard (default for backward compatibility)
-  const { t } = useLanguage();
-  const { saveGameResult, user } = useFirebase();
-  const { team1, team2, updateTeam1, updateTeam2, resetScores, isLoading } =
-    useScoreStorage(gameConfig.id);
-  const [selectedPoints, setSelectedPoints] = useState<number | null>(null);
-  const [selectedTeam, setSelectedTeam] = useState<1 | 2 | null>(null);
-  const [gameSaved, setGameSaved] = useState(false);
-  const swipeHandlers = useSwipeToGoBack({ onBack });
+    const handleWin = () => {
+      if (
+        selectedPoints === null ||
+        selectedTeam === null ||
+        !gameConfig.scoringRules
+      )
+        return;
+      const pointsToAward = gameConfig.scoringRules.win(selectedPoints);
+      if (selectedTeam === 1) {
+        updateTeam1({ score: team1.score + pointsToAward });
+      } else {
+        updateTeam2({ score: team2.score + pointsToAward });
+      }
+      setSelectedPoints(null);
+    };
 
-  const handleWin = () => {
-    if (
-      selectedPoints === null ||
-      selectedTeam === null ||
-      !gameConfig.scoringRules
-    )
-      return;
+    const handleLose = () => {
+      if (
+        selectedPoints === null ||
+        selectedTeam === null ||
+        !gameConfig.scoringRules
+      )
+        return;
+      const pointsToAward = gameConfig.scoringRules.lose(selectedPoints);
+      if (selectedTeam === 1) {
+        updateTeam2({ score: team2.score + pointsToAward });
+      } else {
+        updateTeam1({ score: team1.score + pointsToAward });
+      }
+      setSelectedPoints(null);
+    };
 
-    const pointsToAward = gameConfig.scoringRules.win(selectedPoints);
+    const handleSaveGame = async () => {
+      const winner = team1.score > team2.score ? team1.name : team2.name;
+      try {
+        await saveGameResult({
+          gameType: "kout",
+          team1: { name: team1.name, score: team1.score },
+          team2: { name: team2.name, score: team2.score },
+          winner: winner,
+        });
+        setGameSaved(true);
+        Alert.alert(
+          t.common?.success || "Success",
+          t.common?.gameSaved || "Game saved!"
+        );
+      } catch (error) {
+        Alert.alert(
+          t.common?.error || "Error",
+          t.common?.failedToSave || "Failed to save game"
+        );
+      }
+    };
 
-    if (selectedTeam === 1) {
-      updateTeam1({ score: team1.score + pointsToAward });
-    } else {
-      updateTeam2({ score: team2.score + pointsToAward });
-    }
+    const handleReset = () => {
+      resetScores();
+      setSelectedPoints(null);
+      setSelectedTeam(null);
+      setGameSaved(false);
+    };
 
-    setSelectedPoints(null);
-  };
-
-  const handleLose = () => {
-    if (
-      selectedPoints === null ||
-      selectedTeam === null ||
-      !gameConfig.scoringRules
-    )
-      return;
-
-    const pointsToAward = gameConfig.scoringRules.lose(selectedPoints);
-
-    if (selectedTeam === 1) {
-      updateTeam2({ score: team2.score + pointsToAward });
-    } else {
-      updateTeam1({ score: team1.score + pointsToAward });
-    }
-
-    setSelectedPoints(null);
-  };
-
-  const handleSaveGame = async () => {
-    const winner = team1.score > team2.score ? team1.name : team2.name;
-
-    try {
-      await saveGameResult({
-        gameType: "kout",
-        team1: { name: team1.name, score: team1.score },
-        team2: { name: team2.name, score: team2.score },
-        winner: winner,
-      });
-
-      setGameSaved(true);
-      Alert.alert(
-        t.common?.success || "Success",
-        t.common?.gameSaved || "Game saved!"
-      );
-    } catch (error) {
-      Alert.alert(
-        t.common?.error || "Error",
-        t.common?.failedToSave || "Failed to save game"
+    if (isLoading) {
+      return (
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>{t.common.loading}</Text>
+        </View>
       );
     }
-  };
 
-  const handleReset = () => {
-    resetScores();
-    setSelectedPoints(null);
-    setSelectedTeam(null);
-    setGameSaved(false);
-  };
-
-  if (isLoading) {
     return (
-      <View style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>{t.common.loading}</Text>
-      </View>
-    );
-  }
-
-  return (
-    <Animated.View
-      style={[styles.wrapper, swipeHandlers.animatedStyle]}
-      {...swipeHandlers.panHandlers}
-    >
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.contentContainer}
+      <Animated.View
+        style={[styles.wrapper, swipeHandlers.animatedStyle]}
+        {...swipeHandlers.panHandlers}
       >
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onBack} style={styles.backButton}>
-            <Text style={styles.backButtonText}>←</Text>
-          </TouchableOpacity>
-          <View style={styles.headerCenter}>
-            <Text style={styles.title}>
-              {t.games[gameConfig.id as keyof typeof t.games]?.name ||
-                gameConfig.name}
-            </Text>
+        <ScrollView
+          style={styles.container}
+          contentContainerStyle={styles.contentContainer}
+          showsVerticalScrollIndicator={false}
+          removeClippedSubviews={true}
+        >
+          <View style={styles.header}>
+            <TouchableOpacity onPress={onBack} style={styles.backButton}>
+              <Text style={styles.backButtonText}>←</Text>
+            </TouchableOpacity>
+            <View style={styles.headerCenter}>
+              <Text style={styles.title}>
+                {t.games[gameConfig.id as keyof typeof t.games]?.name ||
+                  gameConfig.name}
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={handleReset}
+              style={styles.resetIconButton}
+            >
+              <Text style={styles.resetIconText}>↻</Text>
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity
-            onPress={handleReset}
-            style={styles.resetIconButton}
-          >
-            <Text style={styles.resetIconText}>↻</Text>
-          </TouchableOpacity>
-        </View>
 
-        <TeamCard
-          team={team1}
-          selected={selectedTeam === 1}
-          onNameChange={(name) => updateTeam1({ name })}
-          onSelect={() => setSelectedTeam(1)}
-        />
-        <TeamCard
-          team={team2}
-          selected={selectedTeam === 2}
-          onNameChange={(name) => updateTeam2({ name })}
-          onSelect={() => setSelectedTeam(2)}
-        />
+          <TeamCard
+            team={team1}
+            selected={selectedTeam === 1}
+            onNameChange={(name) => updateTeam1({ name })}
+            onSelect={() => setSelectedTeam(1)}
+          />
+          <TeamCard
+            team={team2}
+            selected={selectedTeam === 2}
+            onNameChange={(name) => updateTeam2({ name })}
+            onSelect={() => setSelectedTeam(2)}
+          />
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t.common.selectPoints}</Text>
-          <View style={styles.pointsContainer}>
-            {(gameConfig.pointValues || []).map((points) => (
-              <PointButton
-                key={points}
-                points={points}
-                selected={selectedPoints === points}
-                onPress={() => setSelectedPoints(points)}
-              />
-            ))}
-          </View>
-        </View>
-
-        {selectedTeam !== null && selectedPoints !== null && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              {selectedTeam === 1 ? team1.name : team2.name} {t.common.actions}
-            </Text>
-            <View style={styles.actionsContainer}>
+            <Text style={styles.sectionTitle}>{t.common.selectPoints}</Text>
+            <View style={styles.pointsContainer}>
+              {(gameConfig.pointValues || []).map((points) => (
+                <PointButton
+                  key={points}
+                  points={points}
+                  selected={selectedPoints === points}
+                  onPress={() => setSelectedPoints(points)}
+                />
+              ))}
+            </View>
+          </View>
+
+          {selectedTeam !== null && selectedPoints !== null && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>
+                {selectedTeam === 1 ? team1.name : team2.name}{" "}
+                {t.common.actions}
+              </Text>
+              <View style={styles.actionsContainer}>
+                <ActionButton
+                  label={t.common.win}
+                  onPress={handleWin}
+                  variant="primary"
+                />
+                <ActionButton
+                  label={t.common.lose}
+                  onPress={handleLose}
+                  variant="secondary"
+                />
+              </View>
+            </View>
+          )}
+
+          {(team1.score > 0 || team2.score > 0) && user && !gameSaved && (
+            <View style={styles.section}>
               <ActionButton
-                label={t.common.win}
-                onPress={handleWin}
-                variant="primary"
-              />
-              <ActionButton
-                label={t.common.lose}
-                onPress={handleLose}
+                label={t.common?.saveGame || "💾 Save Game"}
+                onPress={handleSaveGame}
                 variant="secondary"
               />
             </View>
-          </View>
-        )}
+          )}
 
-        {/* Save Game Button - only show if there are scores and user is logged in */}
-        {(team1.score > 0 || team2.score > 0) && user && !gameSaved && (
-          <View style={styles.section}>
-            <ActionButton
-              label={t.common?.saveGame || "💾 Save Game"}
-              onPress={handleSaveGame}
-              variant="secondary"
-            />
-          </View>
-        )}
+          {gameSaved && (
+            <View style={styles.section}>
+              <Text style={styles.savedText}>
+                ✓ {t.common?.gameSaved || "Game Saved"}
+              </Text>
+            </View>
+          )}
 
-        {/* Game Saved Indicator */}
-        {gameSaved && (
-          <View style={styles.section}>
-            <Text style={styles.savedText}>
-              ✓ {t.common?.gameSaved || "Game Saved"}
-            </Text>
-          </View>
-        )}
+          {(team1.score > 0 || team2.score > 0) && !user && (
+            <View style={styles.section}>
+              <Text style={styles.guestNote}>
+                {t.common?.loginToSaveGames || "Login to save your games"}
+              </Text>
+            </View>
+          )}
+        </ScrollView>
+      </Animated.View>
+    );
+  }
+);
 
-        {/* Login prompt for guests */}
-        {(team1.score > 0 || team2.score > 0) && !user && (
-          <View style={styles.section}>
-            <Text style={styles.guestNote}>
-              {t.common?.loginToSaveGames || "Login to save your games"}
-            </Text>
-          </View>
-        )}
-      </ScrollView>
-    </Animated.View>
-  );
-};
+export const Scoreboard: React.FC<ScoreboardProps> = memo(
+  ({ gameConfig, onBack }) => {
+    const content = useMemo(() => {
+      if (gameConfig.scoringMode === "hand") {
+        return <HandScoreboard gameConfig={gameConfig} onBack={onBack} />;
+      }
+      if (gameConfig.scoringMode === "manualInput") {
+        return <BalootScoreboard gameConfig={gameConfig} onBack={onBack} />;
+      }
+      return (
+        <PointSelectionScoreboard gameConfig={gameConfig} onBack={onBack} />
+      );
+    }, [gameConfig.id, onBack]);
+
+    return <View style={styles.wrapper}>{content}</View>;
+  }
+);
 
 const styles = StyleSheet.create({
   wrapper: {

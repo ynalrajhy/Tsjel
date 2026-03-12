@@ -2,7 +2,6 @@ import React from 'react';
 import { View, Text, TextInput, StyleSheet, TouchableOpacity } from 'react-native';
 import { Team } from '../models/Score';
 import { useLanguage } from '../context/LanguageContext';
-import { colors, cardBase, cardSelected, cardShadow, typography } from '../theme/styles';
 
 interface TeamCardProps {
   team: Team;
@@ -33,7 +32,7 @@ export const TeamCard: React.FC<TeamCardProps> = ({
       activeOpacity={0.7}
     >
       <TextInput
-        style={styles.nameInput}
+        style={[styles.nameInput, selected && styles.nameInputSelected]}
         value={team.name}
         onChangeText={onNameChange}
         placeholder={t.common.teamName}
@@ -41,13 +40,18 @@ export const TeamCard: React.FC<TeamCardProps> = ({
       />
       {editableScore && scoreValue !== undefined && onChangeScoreText ? (
         <TextInput
-          style={styles.scoreInput}
+          style={[
+            styles.scoreInput,
+            selected && styles.scoreInputSelected,
+          ]}
           value={scoreValue}
           onChangeText={onChangeScoreText}
           keyboardType="numeric"
         />
       ) : (
-        <Text style={styles.scoreText}>{team.score}</Text>
+        <Text style={[styles.scoreText, selected && styles.scoreTextSelected]}>
+          {team.score}
+        </Text>
       )}
       {children}
     </TouchableOpacity>
@@ -59,35 +63,58 @@ const DARK_SELECTED_BACKGROUND = '#002244';
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    ...cardBase,
+    backgroundColor: '#fafafa',
+    borderRadius: 8,
     padding: 12,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
   },
   containerSelected: {
-    ...cardSelected,
+    borderColor: DARK_SELECTED_BACKGROUND,
     backgroundColor: DARK_SELECTED_BACKGROUND,
+    shadowOpacity: 0.15,
   },
   nameInput: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.text.primary,
+    color: '#333',
     textAlign: 'center',
     marginBottom: 8,
-    borderBottomWidth: 2,
-    borderBottomColor: colors.border.accent,
+    borderBottomWidth: 1,
+    borderBottomColor: '#007AFF',
     paddingBottom: 4,
     width: '100%',
-    letterSpacing: 0.3,
+  },
+  nameInputSelected: {
+    color: '#fff',
+    borderBottomColor: '#fff',
   },
   scoreText: {
-    ...typography.score,
-    color: colors.accent.red,
+    fontSize: 36,
+    fontWeight: 'bold',
+    color: '#007AFF',
+  },
+  scoreTextSelected: {
+    color: '#fff',
   },
   scoreInput: {
-    ...typography.score,
-    textAlign: "center",
-    color: colors.accent.red,
+    fontSize: 36,
+    fontWeight: 'bold',
+    color: '#007AFF',
+    textAlign: 'center',
     paddingVertical: 0,
+  },
+  scoreInputSelected: {
+    color: '#fff',
   },
 });
 

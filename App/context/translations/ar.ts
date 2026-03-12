@@ -47,7 +47,7 @@ export const ar = {
   // Hand Scoreboard
   handScoreboard: {
     selectHandType: "اختر نوع اليد",
-    recordHand: "تسجيل {handType}",
+    recordHand: "تسجيل ",
     pleaseSelectWinnerAndHandType: "يرجى اختيار الفائز ونوع اليد",
     gameEndedAfter8Rounds: "انتهت اللعبة بعد 8 جولات!",
     handRecorded: "تم تسجيل اليد",

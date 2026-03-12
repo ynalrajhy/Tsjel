@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, memo, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Alert,
   SafeAreaView,
   Animated,
+  ActivityIndicator,
 } from "react-native";
 import { useScoreStorage } from "../hooks/useScoreStorage";
 import { useFirebase } from "../context/FirebaseContext";
@@ -16,9 +17,8 @@ import { TeamCard } from "./TeamCard";
 import { ActionButton } from "./ActionButton";
 import { GameConfig } from "../config/games";
 import { useLanguage } from "../context/LanguageContext";
-import { colors, cardBase, cardShadow, typography } from "../theme/styles";
+import { colors, cardBase, typography } from "../theme/styles";
 import { useSwipeToGoBack } from "../hooks/useSwipeToGoBack";
-
 
 interface Round {
   roundNumber: number;
@@ -29,271 +29,276 @@ interface Round {
 interface BalootScoreboardProps {
   gameConfig: GameConfig;
   onBack: () => void;
+  isTransitioning?: boolean;
 }
 
-export const BalootScoreboard: React.FC<BalootScoreboardProps> = ({
-  gameConfig,
-  onBack,
-}) => {
-  const { t } = useLanguage();
-  const { saveGameResult, user } = useFirebase();
-  const { team1, team2, updateTeam1, updateTeam2, resetScores, isLoading } =
-    useScoreStorage(gameConfig.id);
-  const swipeHandlers = useSwipeToGoBack({ onBack });
-  const [team1Input, setTeam1Input] = useState<string>("");
-  const [team2Input, setTeam2Input] = useState<string>("");
-  const [gameWon, setGameWon] = useState<boolean>(false);
-  const [winner, setWinner] = useState<string | null>(null);
-  const [rounds, setRounds] = useState<Round[]>([]);
-  const gameSavedRef = useRef(false);
+export const BalootScoreboard: React.FC<BalootScoreboardProps> = memo(
+  ({ gameConfig, onBack, isTransitioning }) => {
+    const { t } = useLanguage();
+    const { saveGameResult, user } = useFirebase();
 
-  const targetScore = gameConfig.winCondition?.targetScore || 152;
+    // CRITICAL PERFORMANCE FIX: Delay the heavy hook initialization
+    const [isReady, setIsReady] = useState(false);
 
-  useEffect(() => {
-    // Check for win condition
-    if (team1.score >= targetScore && !gameWon) {
-      setGameWon(true);
-      setWinner(team1.name);
+    useEffect(() => {
+      if (!isTransitioning) {
+        const timer = setTimeout(() => setIsReady(true), 50);
+        return () => clearTimeout(timer);
+      }
+    }, [isTransitioning]);
 
-      // Auto-save game to Firebase
-      if (user && !gameSavedRef.current) {
-        gameSavedRef.current = true;
-        saveGameResult({
-          gameType: "baloot",
-          team1: { name: team1.name, score: team1.score },
-          team2: { name: team2.name, score: team2.score },
-          winner: team1.name,
-          rounds: rounds.length + 1,
-        });
+    const { team1, team2, updateTeam1, updateTeam2, resetScores, isLoading } =
+      useScoreStorage(isReady ? gameConfig.id : "dummy");
+
+    const swipeHandlers = useSwipeToGoBack({ onBack });
+    const [team1Input, setTeam1Input] = useState<string>("");
+    const [team2Input, setTeam2Input] = useState<string>("");
+    const [gameWon, setGameWon] = useState<boolean>(false);
+    const [winner, setWinner] = useState<string | null>(null);
+    const [rounds, setRounds] = useState<Round[]>([]);
+    const gameSavedRef = useRef(false);
+
+    const targetScore = gameConfig.winCondition?.targetScore || 152;
+
+    useEffect(() => {
+      if (!isReady) return;
+      setTeam1Input(String(team1.score));
+      setTeam2Input(String(team2.score));
+    }, [isReady, team1.score, team2.score]);
+
+    useEffect(() => {
+      if (!isReady || gameWon) return;
+
+      let currentWinner = null;
+      if (team1.score >= targetScore) {
+        currentWinner = team1.name;
+      } else if (team2.score >= targetScore) {
+        currentWinner = team2.name;
       }
 
-      Alert.alert(
-        t.common.gameOver,
-        t.balootScoreboard.gameOverMessage
-          .replace("{name}", team1.name)
-          .replace("{score}", team1.score.toString()),
-        [{ text: t.common.ok }]
-      );
-    } else if (team2.score >= targetScore && !gameWon) {
-      setGameWon(true);
-      setWinner(team2.name);
+      if (currentWinner) {
+        setGameWon(true);
+        setWinner(currentWinner);
 
-      // Auto-save game to Firebase
-      if (user && !gameSavedRef.current) {
-        gameSavedRef.current = true;
-        saveGameResult({
-          gameType: "baloot",
-          team1: { name: team1.name, score: team1.score },
-          team2: { name: team2.name, score: team2.score },
-          winner: team2.name,
-          rounds: rounds.length + 1,
-        });
+        if (user && !gameSavedRef.current) {
+          gameSavedRef.current = true;
+          saveGameResult({
+            gameType: "baloot",
+            team1: { name: team1.name, score: team1.score },
+            team2: { name: team2.name, score: team2.score },
+            winner: currentWinner,
+            rounds: rounds.length + 1,
+          }).catch(console.error);
+        }
+
+        Alert.alert(
+          t.common.gameOver,
+          t.balootScoreboard.gameOverMessage
+            .replace("{name}", currentWinner)
+            .replace(
+              "{score}",
+              (currentWinner === team1.name
+                ? team1.score
+                : team2.score
+              ).toString()
+            ),
+          [{ text: t.common.ok }]
+        );
+      }
+    }, [team1.score, team2.score, targetScore, gameWon, isReady]);
+
+    const handleAddRound = useCallback(() => {
+      if (gameWon) return;
+
+      const parseTotal = (text: string, current: number, teamLabel: string) => {
+        if (text.trim() === "") return current;
+        const value = parseInt(text, 10);
+        if (isNaN(value) || value < 0) {
+          Alert.alert(
+            t.balootScoreboard.invalidInput,
+            t.balootScoreboard.pleaseEnterValidNumberTeam.replace(
+              "{team}",
+              teamLabel
+            )
+          );
+          return null;
+        }
+        return value;
+      };
+
+      const newTeam1Total = parseTotal(team1Input, team1.score, "1");
+      if (newTeam1Total === null) return;
+      const newTeam2Total = parseTotal(team2Input, team2.score, "2");
+      if (newTeam2Total === null) return;
+
+      const team1Delta = newTeam1Total - team1.score;
+      const team2Delta = newTeam2Total - team2.score;
+
+      if (team1Delta < 0 || team2Delta < 0) {
+        Alert.alert(
+          t.balootScoreboard.invalidInput,
+          "New total cannot be less than current score"
+        );
+        return;
       }
 
-      Alert.alert(
-        t.common.gameOver,
-        t.balootScoreboard.gameOverMessage
-          .replace("{name}", team2.name)
-          .replace("{score}", team2.score.toString()),
-        [{ text: t.common.ok }]
+      if (team1Delta === 0 && team2Delta === 0) {
+        Alert.alert(
+          t.balootScoreboard.invalidInput,
+          t.balootScoreboard.pleaseEnterAtLeastOneScore
+        );
+        return;
+      }
+
+      if (team1Delta !== 0) updateTeam1({ score: newTeam1Total });
+      if (team2Delta !== 0) updateTeam2({ score: newTeam2Total });
+
+      const newRound: Round = {
+        roundNumber: rounds.length + 1,
+        team1Score: team1Delta,
+        team2Score: team2Delta,
+      };
+      setRounds((prev) => [...prev, newRound]);
+      setTeam1Input(String(newTeam1Total));
+      setTeam2Input(String(newTeam2Total));
+    }, [
+      gameWon,
+      team1Input,
+      team2Input,
+      team1.score,
+      team2.score,
+      rounds.length,
+      t,
+      updateTeam1,
+      updateTeam2,
+    ]);
+
+    const handleReset = useCallback(() => {
+      resetScores();
+      setTeam1Input("");
+      setTeam2Input("");
+      setGameWon(false);
+      setWinner(null);
+      setRounds([]);
+      gameSavedRef.current = false;
+    }, [resetScores]);
+
+    if (!isReady || isLoading) {
+      return (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator color={colors.accent.red} />
+        </View>
       );
     }
-  }, [team1.score, team2.score, targetScore, gameWon, team1.name, team2.name]);
 
-  const handleAddRound = () => {
-    if (gameWon) return;
-
-    const team1Score = team1Input.trim() === "" ? 0 : parseInt(team1Input, 10);
-    const team2Score = team2Input.trim() === "" ? 0 : parseInt(team2Input, 10);
-
-    if ((team1Input.trim() !== "" && isNaN(team1Score)) || team1Score < 0) {
-      Alert.alert(
-        t.balootScoreboard.invalidInput,
-        t.balootScoreboard.pleaseEnterValidNumberTeam.replace("{team}", "1")
-      );
-      return;
-    }
-
-    if ((team2Input.trim() !== "" && isNaN(team2Score)) || team2Score < 0) {
-      Alert.alert(
-        t.balootScoreboard.invalidInput,
-        t.balootScoreboard.pleaseEnterValidNumberTeam.replace("{team}", "2")
-      );
-      return;
-    }
-
-    if (team1Score === 0 && team2Score === 0) {
-      Alert.alert(
-        t.balootScoreboard.invalidInput,
-        t.balootScoreboard.pleaseEnterAtLeastOneScore
-      );
-      return;
-    }
-
-    // Add scores to teams
-    if (team1Score > 0) {
-      updateTeam1({ score: team1.score + team1Score });
-    }
-    if (team2Score > 0) {
-      updateTeam2({ score: team2.score + team2Score });
-    }
-
-    // Add round to history
-    const newRound: Round = {
-      roundNumber: rounds.length + 1,
-      team1Score: team1Score,
-      team2Score: team2Score,
-    };
-    setRounds([...rounds, newRound]);
-
-    // Clear inputs
-    setTeam1Input("");
-    setTeam2Input("");
-  };
-
-  const handleReset = () => {
-    resetScores();
-    setTeam1Input("");
-    setTeam2Input("");
-    setGameWon(false);
-    setWinner(null);
-    setRounds([]);
-    gameSavedRef.current = false;
-  };
-
-  if (isLoading) {
     return (
-      <View style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>{t.common.loading}</Text>
-      </View>
-    );
-  }
-
-  return (
-    <SafeAreaView style={styles.safeArea}>
-      <Animated.View
-        style={[styles.wrapper, swipeHandlers.animatedStyle]}
-        {...swipeHandlers.panHandlers}
-      >
-        <ScrollView
-          style={styles.container}
-          contentContainerStyle={styles.contentContainer}
+      <SafeAreaView style={styles.safeArea}>
+        <Animated.View
+          style={[styles.wrapper, swipeHandlers.animatedStyle]}
+          {...swipeHandlers.panHandlers}
         >
-          <View style={styles.header}>
-            <TouchableOpacity onPress={onBack} style={styles.backButton}>
-              <Text style={styles.backButtonText}>←</Text>
-            </TouchableOpacity>
-            <View style={styles.headerCenter}>
-              <Text style={styles.title}>
-                {t.games[gameConfig.id as keyof typeof t.games]?.name ||
-                  gameConfig.name}
-              </Text>
-              {gameWon && winner && (
-                <Text style={styles.winnerText}>
-                  🎉 {t.balootScoreboard.wins.replace("{name}", winner)} 🎉
+          <ScrollView
+            style={styles.container}
+            contentContainerStyle={styles.contentContainer}
+            showsVerticalScrollIndicator={false}
+            removeClippedSubviews={true}
+          >
+            <View style={styles.header}>
+              <TouchableOpacity onPress={onBack} style={styles.backButton}>
+                <Text style={styles.backButtonText}>←</Text>
+              </TouchableOpacity>
+              <View style={styles.headerCenter}>
+                <Text style={styles.title}>
+                  {t.games[gameConfig.id as keyof typeof t.games]?.name ||
+                    gameConfig.name}
                 </Text>
-              )}
-            </View>
-            <TouchableOpacity
-              onPress={handleReset}
-              style={styles.resetIconButton}
-            >
-              <Text style={styles.resetIconText}>↻</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.teamsRow}>
-            <TeamCard
-              team={team2}
-              selected={false}
-              onNameChange={(name) => updateTeam2({ name })}
-              onSelect={() => {}}
-            />
-            <TeamCard
-              team={team1}
-              selected={false}
-              onNameChange={(name) => updateTeam1({ name })}
-              onSelect={() => {}}
-            />
-          </View>
-
-          <View style={styles.inputsRow}>
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>{team2.name}</Text>
-              <TextInput
-                style={[styles.input, gameWon && styles.inputDisabled]}
-                value={team2Input}
-                onChangeText={setTeam2Input}
-                placeholder="0"
-                keyboardType="numeric"
-                editable={!gameWon}
-              />
-            </View>
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>{team1.name}</Text>
-              <TextInput
-                style={[styles.input, gameWon && styles.inputDisabled]}
-                value={team1Input}
-                onChangeText={setTeam1Input}
-                placeholder="0"
-                keyboardType="numeric"
-                editable={!gameWon}
-              />
-            </View>
-          </View>
-
-          <View style={styles.addButtonContainer}>
-            <ActionButton
-              label={t.common.addRound}
-              onPress={handleAddRound}
-              variant="primary"
-              disabled={
-                gameWon ||
-                (team1Input.trim() === "" && team2Input.trim() === "")
-              }
-            />
-          </View>
-
-          {/* Game saved indicator */}
-          {gameWon && gameSavedRef.current && (
-            <View style={styles.savedIndicator}>
-              <Text style={styles.savedText}>
-                ✓ {t.common?.gameSaved || "Game Saved"}
-              </Text>
-            </View>
-          )}
-
-          {rounds.length > 0 && (
-            <View style={styles.roundsSection}>
-              <Text style={styles.sectionTitle}>{t.common.roundsHistory}</Text>
-              {rounds.map((round, index) => (
-                <View key={index} style={styles.roundCard}>
-                  <Text style={styles.roundNumber}>
-                    {t.common.round} {round.roundNumber}
+                {gameWon && winner && (
+                  <Text style={styles.winnerText}>
+                    🎉 {t.balootScoreboard.wins.replace("{name}", winner)} 🎉
                   </Text>
-                  <View style={styles.roundScores}>
-                    <View style={styles.roundScoreItem}>
-                      <Text style={styles.roundTeamName}>{team2.name}</Text>
-                      <Text style={styles.roundScoreValue}>
-                        {round.team2Score}
-                      </Text>
-                    </View>
-                    <View style={styles.roundScoreItem}>
-                      <Text style={styles.roundTeamName}>{team1.name}</Text>
-                      <Text style={styles.roundScoreValue}>
-                        {round.team1Score}
-                      </Text>
+                )}
+              </View>
+              <TouchableOpacity
+                onPress={handleReset}
+                style={styles.resetIconButton}
+              >
+                <Text style={styles.resetIconText}>↻</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.teamsRow}>
+              <TeamCard
+                team={team2}
+                onNameChange={(name) => updateTeam2({ name })}
+                onSelect={() => {}}
+                editableScore
+                scoreValue={team2Input}
+                onChangeScoreText={setTeam2Input}
+              />
+              <TeamCard
+                team={team1}
+                onNameChange={(name) => updateTeam1({ name })}
+                onSelect={() => {}}
+                editableScore
+                scoreValue={team1Input}
+                onChangeScoreText={setTeam1Input}
+              />
+            </View>
+
+            <View style={styles.addButtonContainer}>
+              <ActionButton
+                label={t.common.addRound}
+                onPress={handleAddRound}
+                variant="primary"
+                disabled={
+                  gameWon ||
+                  (team1Input.trim() === "" && team2Input.trim() === "")
+                }
+              />
+            </View>
+
+            {gameWon && gameSavedRef.current && (
+              <View style={styles.savedIndicator}>
+                <Text style={styles.savedText}>
+                  ✓ {t.common?.gameSaved || "Game Saved"}
+                </Text>
+              </View>
+            )}
+
+            {rounds.length > 0 && (
+              <View style={styles.roundsSection}>
+                <Text style={styles.sectionTitle}>
+                  {t.common.roundsHistory}
+                </Text>
+                {rounds.map((round, index) => (
+                  <View key={index} style={styles.roundCard}>
+                    <Text style={styles.roundNumber}>
+                      {t.common.round} {round.roundNumber}
+                    </Text>
+                    <View style={styles.roundScores}>
+                      <View style={styles.roundScoreItem}>
+                        <Text style={styles.roundTeamName}>{team2.name}</Text>
+                        <Text style={styles.roundScoreValue}>
+                          {round.team2Score}
+                        </Text>
+                      </View>
+                      <View style={styles.roundScoreItem}>
+                        <Text style={styles.roundTeamName}>{team1.name}</Text>
+                        <Text style={styles.roundScoreValue}>
+                          {round.team1Score}
+                        </Text>
+                      </View>
                     </View>
                   </View>
-                </View>
-              ))}
-            </View>
-          )}
-        </ScrollView>
-      </Animated.View>
-    </SafeAreaView>
-  );
-};
+                ))}
+              </View>
+            )}
+          </ScrollView>
+        </Animated.View>
+      </SafeAreaView>
+    );
+  }
+);
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -371,14 +376,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 10,
     marginBottom: 12,
-  },
-  inputsRow: {
-    flexDirection: "row",
-    gap: 10,
-    marginBottom: 12,
-  },
-  inputGroup: {
-    flex: 1,
   },
   inputLabel: {
     fontSize: 14,

@@ -65,7 +65,9 @@ const styles = StyleSheet.create({
   },
   containerSelected: {
     ...cardSelected,
-    backgroundColor: DARK_SELECTED_BACKGROUND,
+    backgroundColor: colors.accent.blue,
+    borderColor: colors.border.accent,
+    borderWidth: 3,
   },
   nameInput: {
     fontSize: 16,

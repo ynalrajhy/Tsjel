@@ -139,13 +139,17 @@ const PointSelectionScoreboard = memo(
             team={team1}
             selected={selectedTeam === 1}
             onNameChange={(name) => updateTeam1({ name })}
-            onSelect={() => setSelectedTeam(1)}
+            onSelect={() =>
+              setSelectedTeam((current) => (current === 1 ? null : 1))
+            }
           />
           <TeamCard
             team={team2}
             selected={selectedTeam === 2}
             onNameChange={(name) => updateTeam2({ name })}
-            onSelect={() => setSelectedTeam(2)}
+            onSelect={() =>
+              setSelectedTeam((current) => (current === 2 ? null : 2))
+            }
           />
 
           <View style={styles.section}>

@@ -15,6 +15,8 @@ import { PointButton } from "./PointButton";
 import { ActionButton } from "./ActionButton";
 import { BalootScoreboard } from "./BalootScoreboard";
 import { HandScoreboard } from "./HandScoreboard";
+import { KoutGameSetup } from "./KoutGameSetup";
+import { KoutScoreboard } from "./KoutScoreboard";
 import { GameConfig } from "../config/games";
 import { useLanguage } from "../context/LanguageContext";
 import { colors, typography } from "../theme/styles";
@@ -24,6 +26,48 @@ interface ScoreboardProps {
   gameConfig: GameConfig;
   onBack: () => void;
 }
+
+interface KoutScoreboardState {
+  stage: "setup" | "playing";
+  gameEndCondition: 51 | 101 | null;
+}
+
+const KoutScoreboardWrapper = memo(
+  ({ gameConfig, onBack }: ScoreboardProps) => {
+    const [state, setState] = useState<KoutScoreboardState>({
+      stage: "setup",
+      gameEndCondition: null,
+    });
+
+    const handleSelectGameEnd = (endCondition: 51 | 101 | null) => {
+      setState({
+        stage: "playing",
+        gameEndCondition: endCondition,
+      });
+    };
+
+    const handleBackFromGame = () => {
+      setState({
+        stage: "setup",
+        gameEndCondition: null,
+      });
+      onBack();
+    };
+
+    if (state.stage === "setup") {
+      return (
+        <KoutGameSetup onSelectGameEnd={handleSelectGameEnd} onBack={onBack} />
+      );
+    }
+
+    return (
+      <KoutScoreboard
+        gameEndCondition={state.gameEndCondition}
+        onBack={handleBackFromGame}
+      />
+    );
+  },
+);
 
 const PointSelectionScoreboard = memo(
   ({ gameConfig, onBack }: ScoreboardProps) => {
@@ -81,12 +125,12 @@ const PointSelectionScoreboard = memo(
         setGameSaved(true);
         Alert.alert(
           t.common?.success || "Success",
-          t.common?.gameSaved || "Game saved!"
+          t.common?.gameSaved || "Game saved!",
         );
       } catch (error) {
         Alert.alert(
           t.common?.error || "Error",
-          t.common?.failedToSave || "Failed to save game"
+          t.common?.failedToSave || "Failed to save game",
         );
       }
     };
@@ -215,12 +259,17 @@ const PointSelectionScoreboard = memo(
         </ScrollView>
       </Animated.View>
     );
-  }
+  },
 );
 
 export const Scoreboard: React.FC<ScoreboardProps> = memo(
   ({ gameConfig, onBack }) => {
     const content = useMemo(() => {
+      if (gameConfig.id === "kout") {
+        return (
+          <KoutScoreboardWrapper gameConfig={gameConfig} onBack={onBack} />
+        );
+      }
       if (gameConfig.scoringMode === "hand") {
         return <HandScoreboard gameConfig={gameConfig} onBack={onBack} />;
       }
@@ -233,7 +282,7 @@ export const Scoreboard: React.FC<ScoreboardProps> = memo(
     }, [gameConfig.id, onBack]);
 
     return <View style={styles.wrapper}>{content}</View>;
-  }
+  },
 );
 
 const styles = StyleSheet.create({

@@ -76,6 +76,21 @@ export const en = {
     gameOverMessage: "{name} wins with {score} points!",
   },
 
+  // Kout Scoreboard
+  koutScoreboard: {
+    selectGameEnd: "Select Game End",
+    gameEnd51: "51 Points",
+    gameEnd101: "101 Points",
+    gameEndUnlimited: "Unlimited",
+    whoWon: "Who won this round?",
+    selectHandType: "Select Hand Type",
+    malzome: "Malzome",
+    gameEnded: "Game Ended!",
+    gameEndedMessage: "{name} wins with {score} points!",
+    roundHistory: "Round History",
+    undo: "↶ Undo",
+  },
+
   // Games
   games: {
     kout: {

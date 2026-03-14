@@ -76,6 +76,21 @@ export const ar = {
     gameOverMessage: "{name} يفوز بـ {score} نقطة!",
   },
 
+  // Kout Scoreboard
+  koutScoreboard: {
+    selectGameEnd: "اختر نهاية اللعبة",
+    gameEnd51: "51 نقطة",
+    gameEnd101: "101 نقطة",
+    gameEndUnlimited: "بلا حد",
+    whoWon: "من فاز في هذه الجولة؟",
+    selectHandType: "اختر نوع اليد",
+    malzome: "ملزومة",
+    gameEnded: "انتهت اللعبة!",
+    gameEndedMessage: "{name} يفوز بـ {score} نقطة!",
+    roundHistory: "سجل الجولات",
+    undo: "↶ تراجع",
+  },
+
   // Games
   games: {
     kout: {

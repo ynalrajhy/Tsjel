@@ -19,17 +19,22 @@ import { useSwipeToGoBack } from "../hooks/useSwipeToGoBack";
 
 interface KoutScoreboardProps {
   gameEndCondition: 51 | 101 | null;
+  team1Name: string;
+  team2Name: string;
+  penaltyPoints: number;
   onBack: () => void;
 }
 
 interface RoundRecord {
   id: string;
   round: number;
+  type: "score" | "penalty";
   selectedTeam: 1 | 2;
   handType: string;
   won: boolean;
   team1Score: number;
   team2Score: number;
+  penaltyTeam?: 1 | 2;
 }
 
 // Correct scoring logic for each hand type
@@ -55,7 +60,13 @@ const getScoringForHand = (
 };
 
 const KoutScoreboardContent = memo(
-  ({ gameEndCondition, onBack }: KoutScoreboardProps) => {
+  ({
+    gameEndCondition,
+    team1Name: initialTeam1Name,
+    team2Name: initialTeam2Name,
+    penaltyPoints,
+    onBack,
+  }: KoutScoreboardProps) => {
     const { t } = useLanguage();
     const { saveGameResult, user } = useFirebase();
     const { team1, team2, updateTeam1, updateTeam2, resetScores, isLoading } =
@@ -69,17 +80,28 @@ const KoutScoreboardContent = memo(
     const [gameSaved, setGameSaved] = useState(false);
     const [gameEnded, setGameEnded] = useState(false);
     const [showGameSummary, setShowGameSummary] = useState(false);
-    const [team1Name, setTeam1Name] = useState(team1.name || "Team 1");
-    const [team2Name, setTeam2Name] = useState(team2.name || "Team 2");
+    const [showPenaltyModal, setShowPenaltyModal] = useState(false);
+    const [team1NameState, setTeam1NameState] = useState(initialTeam1Name);
+    const [team2NameState, setTeam2NameState] = useState(initialTeam2Name);
     const [editingTeam, setEditingTeam] = useState<1 | 2 | null>(null);
     const scrollViewRef = useRef<ScrollView>(null);
     const swipeHandlers = useSwipeToGoBack({ onBack });
 
+    // Derive current totals from round history
+    const currentTeam1Score =
+      roundHistory.length > 0
+        ? roundHistory[roundHistory.length - 1].team1Score
+        : 0;
+    const currentTeam2Score =
+      roundHistory.length > 0
+        ? roundHistory[roundHistory.length - 1].team2Score
+        : 0;
+
     const winner =
-      team1.score > team2.score
-        ? team1Name
-        : team2.score > team1.score
-          ? team2Name
+      currentTeam1Score > currentTeam2Score
+        ? team1NameState
+        : currentTeam2Score > currentTeam1Score
+          ? team2NameState
           : null;
 
     const handleRecordRound = (selectedTeamWon: boolean) => {
@@ -87,8 +109,8 @@ const KoutScoreboardContent = memo(
         return;
 
       const scoring = getScoringForHand(selectedHandType);
-      let newTeam1Score = team1.score;
-      let newTeam2Score = team2.score;
+      let newTeam1Score = currentTeam1Score;
+      let newTeam2Score = currentTeam2Score;
 
       if (selectedTeam === 1) {
         if (selectedTeamWon) {
@@ -107,6 +129,7 @@ const KoutScoreboardContent = memo(
       const newRound: RoundRecord = {
         id: `round-${Date.now()}`,
         round: roundHistory.length + 1,
+        type: "score",
         selectedTeam: selectedTeam,
         handType: selectedHandType,
         won: selectedTeamWon,
@@ -123,7 +146,40 @@ const KoutScoreboardContent = memo(
       setSelectedTeam(null);
       setSelectedHandType(null);
 
-      // Auto-scroll to bottom of table
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    };
+
+    const handleApplyPenalty = (penalizedTeam: 1 | 2) => {
+      if (gameEnded || penaltyPoints === 0) return;
+
+      let newTeam1Score = currentTeam1Score;
+      let newTeam2Score = currentTeam2Score;
+
+      if (penalizedTeam === 1) {
+        newTeam1Score -= penaltyPoints;
+      } else {
+        newTeam2Score -= penaltyPoints;
+      }
+
+      const penaltyRecord: RoundRecord = {
+        id: `penalty-${Date.now()}`,
+        round: roundHistory.length + 1,
+        type: "penalty",
+        selectedTeam: penalizedTeam,
+        handType: "PEN",
+        won: false,
+        team1Score: newTeam1Score,
+        team2Score: newTeam2Score,
+        penaltyTeam: penalizedTeam,
+      };
+
+      setRoundHistory([...roundHistory, penaltyRecord]);
+      updateTeam1({ score: newTeam1Score });
+      updateTeam2({ score: newTeam2Score });
+      setShowPenaltyModal(false);
+
       setTimeout(() => {
         scrollViewRef.current?.scrollToEnd({ animated: true });
       }, 100);
@@ -160,12 +216,13 @@ const KoutScoreboardContent = memo(
     };
 
     const handleSaveGame = async () => {
-      const gameWinner = team1.score > team2.score ? team1Name : team2Name;
+      const gameWinner =
+        currentTeam1Score > currentTeam2Score ? team1NameState : team2NameState;
       try {
         await saveGameResult({
           gameType: "kout",
-          team1: { name: team1Name, score: team1.score },
-          team2: { name: team2Name, score: team2.score },
+          team1: { name: team1NameState, score: currentTeam1Score },
+          team2: { name: team2NameState, score: currentTeam2Score },
           winner: gameWinner,
         });
         setGameSaved(true);
@@ -184,7 +241,7 @@ const KoutScoreboardContent = memo(
     const handleReset = () => {
       Alert.alert(
         t.common.resetGame,
-        "Are you sure you want to reset the game?",
+        t.setup?.areYouSureReset || "Are you sure you want to reset the game?",
         [
           { text: t.common.cancel, onPress: () => {} },
           {
@@ -216,11 +273,16 @@ const KoutScoreboardContent = memo(
     // Format the display for a team cell in a round row
     const formatTeamCell = (round: RoundRecord, teamNumber: 1 | 2): string => {
       const score = teamNumber === 1 ? round.team1Score : round.team2Score;
+      if (round.type === "penalty") {
+        if (round.penaltyTeam === teamNumber) {
+          return `${score} / -${penaltyPoints}`;
+        } else {
+          return `${score} / -`;
+        }
+      }
       if (round.selectedTeam === teamNumber) {
-        // This team was selected — show score / hand type
         return `${score} / ${round.handType}`;
       } else {
-        // This team was NOT selected — show score / -
         return `${score} / -`;
       }
     };
@@ -243,9 +305,22 @@ const KoutScoreboardContent = memo(
           <TouchableOpacity onPress={onBack} style={styles.headerSideBtn}>
             <Text style={styles.backText}>←</Text>
           </TouchableOpacity>
+
+          {/* Penalty Icon */}
+          {penaltyPoints > 0 && (
+            <TouchableOpacity
+              onPress={() => !gameEnded && setShowPenaltyModal(true)}
+              disabled={gameEnded}
+              style={[styles.headerIconBtn, gameEnded && styles.disabledBtn]}
+            >
+              <Text style={styles.penaltyIcon}>⚠️</Text>
+            </TouchableOpacity>
+          )}
+
           <View style={styles.headerCenter}>
             <Text style={styles.headerTitle}>{t.games.kout.name}</Text>
           </View>
+
           <TouchableOpacity
             onPress={handleUndoRound}
             disabled={roundHistory.length === 0 || gameEnded}
@@ -267,9 +342,9 @@ const KoutScoreboardContent = memo(
                 {editingTeam === 1 ? (
                   <TextInput
                     style={styles.teamNameInput}
-                    value={team1Name}
+                    value={team1NameState}
                     onChangeText={(text) => {
-                      setTeam1Name(text);
+                      setTeam1NameState(text);
                       updateTeam1({ name: text });
                     }}
                     onBlur={() => setEditingTeam(null)}
@@ -279,7 +354,7 @@ const KoutScoreboardContent = memo(
                 ) : (
                   <TouchableOpacity onPress={() => setEditingTeam(1)}>
                     <Text style={[styles.tableHeaderText, styles.team1Color]}>
-                      {team1Name}
+                      {team1NameState}
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -288,9 +363,9 @@ const KoutScoreboardContent = memo(
                 {editingTeam === 2 ? (
                   <TextInput
                     style={styles.teamNameInput}
-                    value={team2Name}
+                    value={team2NameState}
                     onChangeText={(text) => {
-                      setTeam2Name(text);
+                      setTeam2NameState(text);
                       updateTeam2({ name: text });
                     }}
                     onBlur={() => setEditingTeam(null)}
@@ -300,7 +375,7 @@ const KoutScoreboardContent = memo(
                 ) : (
                   <TouchableOpacity onPress={() => setEditingTeam(2)}>
                     <Text style={[styles.tableHeaderText, styles.team2Color]}>
-                      {team2Name}
+                      {team2NameState}
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -325,12 +400,24 @@ const KoutScoreboardContent = memo(
                 </View>
               ) : (
                 roundHistory.map((round) => (
-                  <View key={round.id} style={styles.tableRow}>
+                  <View
+                    key={round.id}
+                    style={[
+                      styles.tableRow,
+                      round.type === "penalty" && styles.penaltyRow,
+                    ]}
+                  >
                     <Text style={[styles.cellText, styles.teamCol]}>
                       {formatTeamCell(round, 1)}
+                      {round.type === "penalty" && round.penaltyTeam === 1
+                        ? " ⚠️"
+                        : ""}
                     </Text>
                     <Text style={[styles.cellText, styles.teamCol]}>
                       {formatTeamCell(round, 2)}
+                      {round.type === "penalty" && round.penaltyTeam === 2
+                        ? " ⚠️"
+                        : ""}
                     </Text>
                     <Text
                       style={[
@@ -366,7 +453,7 @@ const KoutScoreboardContent = memo(
                   selectedTeam === 1 && styles.teamBtnTextActive,
                 ]}
               >
-                {team1Name}
+                {team1NameState}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -383,7 +470,7 @@ const KoutScoreboardContent = memo(
                   selectedTeam === 2 && styles.teamBtnTextActive,
                 ]}
               >
-                {team2Name}
+                {team2NameState}
               </Text>
             </TouchableOpacity>
           </View>
@@ -468,15 +555,17 @@ const KoutScoreboardContent = memo(
           </TouchableOpacity>
 
           {/* Save Game */}
-          {(team1.score > 0 || team2.score > 0) && user && !gameSaved && (
-            <View style={styles.saveSection}>
-              <ActionButton
-                label={t.common?.saveGame || "Save Game"}
-                onPress={handleSaveGame}
-                variant="secondary"
-              />
-            </View>
-          )}
+          {(currentTeam1Score !== 0 || currentTeam2Score !== 0) &&
+            user &&
+            !gameSaved && (
+              <View style={styles.saveSection}>
+                <ActionButton
+                  label={t.common?.saveGame || "Save Game"}
+                  onPress={handleSaveGame}
+                  variant="secondary"
+                />
+              </View>
+            )}
 
           {gameSaved && (
             <Text style={styles.savedText}>
@@ -484,6 +573,54 @@ const KoutScoreboardContent = memo(
             </Text>
           )}
         </View>
+
+        {/* ===== PENALTY MODAL ===== */}
+        <Modal
+          visible={showPenaltyModal}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setShowPenaltyModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>
+                {t.setup?.applyPenalty || "Apply Penalty"}
+              </Text>
+              <Text style={styles.penaltyAmountText}>
+                -{penaltyPoints} {t.setup?.points || "points"}
+              </Text>
+              <Text style={styles.penaltySelectText}>
+                {t.setup?.selectTeamToPenalize || "Select team to penalize"}
+              </Text>
+
+              <View style={styles.penaltyTeamBtns}>
+                <TouchableOpacity
+                  style={styles.penaltyTeamBtn}
+                  onPress={() => handleApplyPenalty(1)}
+                >
+                  <Text style={styles.penaltyTeamBtnText}>
+                    {team1NameState}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.penaltyTeamBtn}
+                  onPress={() => handleApplyPenalty(2)}
+                >
+                  <Text style={styles.penaltyTeamBtnText}>
+                    {team2NameState}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                style={styles.penaltyCancelBtn}
+                onPress={() => setShowPenaltyModal(false)}
+              >
+                <Text style={styles.penaltyCancelText}>{t.common.cancel}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
 
         {/* ===== GAME SUMMARY MODAL ===== */}
         <Modal
@@ -503,13 +640,17 @@ const KoutScoreboardContent = memo(
               </View>
               <View style={styles.modalScoresRow}>
                 <View style={styles.modalScoreBlock}>
-                  <Text style={styles.modalScoreTeam}>{team1Name}</Text>
-                  <Text style={styles.modalScoreValue}>{team1.score}</Text>
+                  <Text style={styles.modalScoreTeam}>{team1NameState}</Text>
+                  <Text style={styles.modalScoreValue}>
+                    {currentTeam1Score}
+                  </Text>
                 </View>
                 <Text style={styles.modalVs}>vs</Text>
                 <View style={styles.modalScoreBlock}>
-                  <Text style={styles.modalScoreTeam}>{team2Name}</Text>
-                  <Text style={styles.modalScoreValue}>{team2.score}</Text>
+                  <Text style={styles.modalScoreTeam}>{team2NameState}</Text>
+                  <Text style={styles.modalScoreValue}>
+                    {currentTeam2Score}
+                  </Text>
                 </View>
               </View>
               <View style={styles.modalBtns}>
@@ -535,11 +676,14 @@ const KoutScoreboardContent = memo(
 );
 
 export const KoutScoreboard: React.FC<KoutScoreboardProps> = memo(
-  ({ gameEndCondition, onBack }) => {
+  ({ gameEndCondition, team1Name, team2Name, penaltyPoints, onBack }) => {
     return (
       <View style={styles.wrapper}>
         <KoutScoreboardContent
           gameEndCondition={gameEndCondition}
+          team1Name={team1Name}
+          team2Name={team2Name}
+          penaltyPoints={penaltyPoints}
           onBack={onBack}
         />
       </View>
@@ -578,7 +722,13 @@ const styles = StyleSheet.create({
   headerSideBtn: {
     paddingVertical: 8,
     paddingHorizontal: 4,
-    minWidth: 50,
+    minWidth: 40,
+    alignItems: "center",
+  },
+  headerIconBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    minWidth: 36,
     alignItems: "center",
   },
   backText: {
@@ -599,6 +749,9 @@ const styles = StyleSheet.create({
     fontSize: 24,
     color: colors.accent.blue,
     fontWeight: "600",
+  },
+  penaltyIcon: {
+    fontSize: 20,
   },
   disabledBtn: {
     opacity: 0.3,
@@ -676,6 +829,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     borderBottomWidth: 1,
     borderBottomColor: colors.border.light,
+  },
+  penaltyRow: {
+    backgroundColor: colors.accent.red + "10",
   },
   cellText: {
     fontSize: 17,
@@ -829,7 +985,44 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 
-  /* ===== MODAL ===== */
+  /* ===== PENALTY MODAL ===== */
+  penaltyAmountText: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: colors.accent.red,
+    marginBottom: 12,
+  },
+  penaltySelectText: {
+    fontSize: 14,
+    color: colors.text.secondary,
+    marginBottom: 16,
+  },
+  penaltyTeamBtns: {
+    width: "100%",
+    gap: 10,
+    marginBottom: 16,
+  },
+  penaltyTeamBtn: {
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    backgroundColor: colors.accent.red,
+  },
+  penaltyTeamBtnText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  penaltyCancelBtn: {
+    paddingVertical: 10,
+  },
+  penaltyCancelText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.text.muted,
+  },
+
+  /* ===== GAME SUMMARY MODAL ===== */
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.7)",

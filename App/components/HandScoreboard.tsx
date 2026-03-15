@@ -10,6 +10,7 @@ import {
   SafeAreaView,
   Animated,
   ActivityIndicator,
+  Modal,
 } from "react-native";
 import { useHandStorage } from "../hooks/useHandStorage";
 import { useFirebase } from "../context/FirebaseContext";
@@ -21,6 +22,9 @@ import { useSwipeToGoBack } from "../hooks/useSwipeToGoBack";
 
 interface HandScoreboardProps {
   gameConfig: GameConfig;
+  playerCount: number;
+  playerNames: string[];
+  penaltyPoints: number;
   onBack: () => void;
   isTransitioning?: boolean;
 }
@@ -41,10 +45,13 @@ interface HandTypeConfig {
 
 interface Round {
   roundNumber: number;
+  type: "score" | "penalty";
   winnerIndex: number;
   winnerName: string;
-  handType: HandType;
+  handType: HandType | null;
   scores: number[];
+  penaltyPlayer?: number;
+  fromWhoIndex?: number; // index of the player who discarded the card (-1 = nobody)
 }
 
 const HAND_TYPE_ORDER: HandType[] = [
@@ -57,7 +64,14 @@ const HAND_TYPE_ORDER: HandType[] = [
 ];
 
 export const HandScoreboard: React.FC<HandScoreboardProps> = memo(
-  ({ gameConfig, onBack, isTransitioning = false }) => {
+  ({
+    gameConfig,
+    playerCount,
+    playerNames: initialPlayerNames,
+    penaltyPoints,
+    onBack,
+    isTransitioning = false,
+  }) => {
     const { t } = useLanguage();
     const { saveGameResult, user } = useFirebase();
 
@@ -71,17 +85,29 @@ export const HandScoreboard: React.FC<HandScoreboardProps> = memo(
     }, [isTransitioning]);
 
     const { players, updatePlayer, resetScores, isLoading } = useHandStorage(
-      isReady ? gameConfig.id : "dummy"
+      isReady ? gameConfig.id : "dummy",
+      playerCount,
+      initialPlayerNames,
     );
 
     const swipeHandlers = useSwipeToGoBack({ onBack });
     const [selectedWinner, setSelectedWinner] = useState<number | null>(null);
     const [selectedHandType, setSelectedHandType] = useState<HandType | null>(
-      null
+      null,
     );
     const [currentRound, setCurrentRound] = useState(1);
     const [rounds, setRounds] = useState<Round[]>([]);
-    const [nzolValues, setNzolValues] = useState<string[]>(["", "", "", ""]);
+    const [nzolValues, setNzolValues] = useState<string[]>(
+      Array(playerCount).fill(""),
+    );
+    const [showPenaltyModal, setShowPenaltyModal] = useState(false);
+    const [showFromWhoModal, setShowFromWhoModal] = useState(false);
+    const [pendingRoundData, setPendingRoundData] = useState<{
+      newScores: number[];
+      winnerIndex: number;
+      winnerName: string;
+      handType: HandType;
+    } | null>(null);
     const gameSavedRef = useRef(false);
     const tableScrollRef = useRef<ScrollView>(null);
 
@@ -118,26 +144,31 @@ export const HandScoreboard: React.FC<HandScoreboardProps> = memo(
       },
     };
 
+    // Only use players up to playerCount
+    const activePlayers = players.slice(0, playerCount);
+
     useEffect(() => {
       if (currentRound > 8 && user && !gameSavedRef.current) {
         gameSavedRef.current = true;
-        const sortedPlayers = [...players].sort((a, b) => a.score - b.score);
+        const sortedPlayers = [...activePlayers].sort(
+          (a, b) => a.score - b.score,
+        );
         const winner = sortedPlayers[0]?.name || "Unknown";
 
         saveGameResult({
           gameType: "hand",
-          players: players.map((p) => ({ name: p.name, score: p.score })),
+          players: activePlayers.map((p) => ({ name: p.name, score: p.score })),
           winner: winner,
           rounds: 8,
         });
       }
-    }, [currentRound, user, players]);
+    }, [currentRound, user, activePlayers]);
 
-    const handleWin = () => {
+    const handleAddRound = () => {
       if (selectedWinner === null || selectedHandType === null) {
         Alert.alert(
           t.common.error,
-          t.handScoreboard.pleaseSelectWinnerAndHandType
+          t.handScoreboard.pleaseSelectWinnerAndHandType,
         );
         return;
       }
@@ -171,49 +202,140 @@ export const HandScoreboard: React.FC<HandScoreboardProps> = memo(
 
       const handConfig = HAND_TYPES[selectedHandType];
 
-      const newPlayers = players.map((player, index) => {
+      const newScores = activePlayers.map((player, index) => {
         if (index === selectedWinner) {
-          return { ...player, score: player.score + handConfig.winnerPoints };
+          return player.score + handConfig.winnerPoints;
         } else {
           const nzolValueStr = nzolValues[index];
           const hasNzol = nzolValueStr && nzolValueStr.trim() !== "";
           if (hasNzol) {
             const nzolValue = parseFloat(nzolValueStr) || 0;
-            return {
-              ...player,
-              score: player.score + nzolValue * nzolMultiplier,
-            };
+            return player.score + nzolValue * nzolMultiplier;
           } else {
-            return { ...player, score: player.score + handConfig.othersPoints };
+            return player.score + handConfig.othersPoints;
           }
         }
       });
 
+      // Store pending data and show "From who?" modal
+      setPendingRoundData({
+        newScores,
+        winnerIndex: selectedWinner,
+        winnerName: activePlayers[selectedWinner].name,
+        handType: selectedHandType,
+      });
+      setShowFromWhoModal(true);
+    };
+
+    const handleFromWhoSelection = (fromWhoIndex: number) => {
+      // fromWhoIndex: -1 = nobody, otherwise the player index
+      if (!pendingRoundData) return;
+
+      const finalScores = [...pendingRoundData.newScores];
+
+      // Add 50 points to the selected player (the one who discarded the card)
+      if (fromWhoIndex >= 0 && fromWhoIndex < playerCount) {
+        finalScores[fromWhoIndex] = finalScores[fromWhoIndex] + 50;
+      }
+
       const roundData: Round = {
         roundNumber: currentRound,
-        winnerIndex: selectedWinner,
-        winnerName: players[selectedWinner].name,
-        handType: selectedHandType,
-        scores: newPlayers.map((p) => p.score),
+        type: "score",
+        winnerIndex: pendingRoundData.winnerIndex,
+        winnerName: pendingRoundData.winnerName,
+        handType: pendingRoundData.handType,
+        scores: finalScores,
+        fromWhoIndex: fromWhoIndex,
       };
 
       setRounds([...rounds, roundData]);
-      newPlayers.forEach((player, index) => {
-        updatePlayer(index, { score: player.score });
+      finalScores.forEach((score, index) => {
+        if (index < playerCount) {
+          updatePlayer(index, { score });
+        }
       });
-
-      const message = t.handScoreboard.roundWonHand
-        .replace("{round}", currentRound.toString())
-        .replace("{name}", players[selectedWinner].name)
-        .replace("{handType}", HAND_TYPES[selectedHandType].label);
-      Alert.alert(t.handScoreboard.handRecorded, message, [
-        { text: t.common.ok },
-      ]);
 
       setCurrentRound(currentRound + 1);
       setSelectedWinner(null);
       setSelectedHandType(null);
-      setNzolValues(["", "", "", ""]);
+      setNzolValues(Array(playerCount).fill(""));
+      setShowFromWhoModal(false);
+      setPendingRoundData(null);
+
+      setTimeout(() => {
+        tableScrollRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    };
+
+    const handleCancelFromWho = () => {
+      setShowFromWhoModal(false);
+      setPendingRoundData(null);
+    };
+
+    const handleUndoRound = () => {
+      if (rounds.length === 0) return;
+
+      const lastRound = rounds[rounds.length - 1];
+      const prevRounds = rounds.slice(0, -1);
+
+      if (lastRound.type === "score") {
+        const prevScores =
+          prevRounds.length > 0
+            ? prevRounds[prevRounds.length - 1].scores
+            : Array(playerCount).fill(0);
+
+        prevScores.forEach((score, index) => {
+          if (index < playerCount) {
+            updatePlayer(index, { score });
+          }
+        });
+
+        setCurrentRound(currentRound - 1);
+      } else if (lastRound.type === "penalty") {
+        const prevScores =
+          prevRounds.length > 0
+            ? prevRounds[prevRounds.length - 1].scores
+            : Array(playerCount).fill(0);
+
+        prevScores.forEach((score, index) => {
+          if (index < playerCount) {
+            updatePlayer(index, { score });
+          }
+        });
+      }
+
+      setRounds(prevRounds);
+      gameSavedRef.current = false;
+    };
+
+    const handleApplyPenalty = (playerIndex: number) => {
+      if (penaltyPoints === 0) return;
+
+      const newScores = activePlayers.map((player, index) => {
+        if (index === playerIndex) {
+          return player.score - penaltyPoints;
+        }
+        return player.score;
+      });
+
+      const penaltyRound: Round = {
+        roundNumber: rounds.length + 1,
+        type: "penalty",
+        winnerIndex: -1,
+        winnerName: "",
+        handType: null,
+        scores: newScores,
+        penaltyPlayer: playerIndex,
+      };
+
+      setRounds([...rounds, penaltyRound]);
+      newScores.forEach((score, index) => {
+        if (index < playerCount) {
+          updatePlayer(index, { score });
+        }
+      });
+
+      setShowPenaltyModal(false);
 
       setTimeout(() => {
         tableScrollRef.current?.scrollToEnd({ animated: true });
@@ -232,14 +354,19 @@ export const HandScoreboard: React.FC<HandScoreboardProps> = memo(
             setSelectedHandType(null);
             setCurrentRound(1);
             setRounds([]);
-            setNzolValues(["", "", "", ""]);
+            setNzolValues(Array(playerCount).fill(""));
             gameSavedRef.current = false;
+            initialPlayerNames.forEach((name, index) => {
+              if (index < playerCount) {
+                updatePlayer(index, { name, score: 0 });
+              }
+            });
           },
         },
       ]);
     };
 
-    const sortedPlayers = [...players].sort((a, b) => a.score - b.score);
+    const sortedPlayers = [...activePlayers].sort((a, b) => a.score - b.score);
     const top3Players = sortedPlayers.slice(0, 3);
     const gameEnded = currentRound > 8;
 
@@ -263,7 +390,7 @@ export const HandScoreboard: React.FC<HandScoreboardProps> = memo(
               contentContainerStyle={styles.contentContainer}
               removeClippedSubviews={true}
             >
-              {/* Same header as Kout/Baloot */}
+              {/* Header */}
               <View style={styles.header}>
                 <TouchableOpacity onPress={onBack} style={styles.headerSideBtn}>
                   <Text style={styles.backText}>←</Text>
@@ -337,16 +464,21 @@ export const HandScoreboard: React.FC<HandScoreboardProps> = memo(
                   <Text style={styles.sectionTitle}>
                     {t.common.gameHistory}
                   </Text>
-                  {rounds.map((round, index) => (
-                    <View key={index} style={styles.roundCard}>
-                      <Text style={styles.roundNumber}>
-                        {t.common.round} {round.roundNumber}
-                      </Text>
-                      <Text style={styles.roundWinner}>
-                        {round.winnerName} - {HAND_TYPES[round.handType].label}
-                      </Text>
-                    </View>
-                  ))}
+                  {rounds
+                    .filter((r) => r.type === "score")
+                    .map((round, index) => (
+                      <View key={index} style={styles.roundCard}>
+                        <Text style={styles.roundNumber}>
+                          {t.common.round} {round.roundNumber}
+                        </Text>
+                        <Text style={styles.roundWinner}>
+                          {round.winnerName} -{" "}
+                          {round.handType
+                            ? HAND_TYPES[round.handType].label
+                            : ""}
+                        </Text>
+                      </View>
+                    ))}
                 </View>
               )}
 
@@ -369,11 +501,23 @@ export const HandScoreboard: React.FC<HandScoreboardProps> = memo(
           style={[styles.wrapper, swipeHandlers.animatedStyle]}
           {...swipeHandlers.panHandlers}
         >
-          {/* ===== HEADER (same as Kout and Baloot) ===== */}
+          {/* ===== HEADER ===== */}
           <View style={styles.header}>
             <TouchableOpacity onPress={onBack} style={styles.headerSideBtn}>
               <Text style={styles.backText}>←</Text>
             </TouchableOpacity>
+
+            {/* Penalty Icon */}
+            {penaltyPoints > 0 && (
+              <TouchableOpacity
+                onPress={() => !gameEnded && setShowPenaltyModal(true)}
+                disabled={gameEnded}
+                style={[styles.headerIconBtn, gameEnded && styles.disabledBtn]}
+              >
+                <Text style={styles.penaltyIcon}>⚠️</Text>
+              </TouchableOpacity>
+            )}
+
             <View style={styles.headerCenter}>
               <Text style={styles.headerTitle}>
                 {t.games[gameConfig.id as keyof typeof t.games]?.name ||
@@ -383,11 +527,17 @@ export const HandScoreboard: React.FC<HandScoreboardProps> = memo(
                 {t.common.round} {currentRound} / 8
               </Text>
             </View>
+
+            {/* Undo Button */}
             <TouchableOpacity
-              onPress={handleReset}
-              style={styles.headerSideBtn}
+              onPress={handleUndoRound}
+              disabled={rounds.length === 0}
+              style={[
+                styles.headerSideBtn,
+                rounds.length === 0 && styles.disabledBtn,
+              ]}
             >
-              <Text style={styles.resetIconText}>↻</Text>
+              <Text style={styles.undoText}>↶</Text>
             </TouchableOpacity>
           </View>
 
@@ -395,15 +545,18 @@ export const HandScoreboard: React.FC<HandScoreboardProps> = memo(
           <View style={styles.tableWrapper}>
             <View style={styles.scoreTable}>
               <View style={styles.tableHeader}>
-                {players.map((player, index) => (
+                {activePlayers.map((player, index) => (
                   <TouchableOpacity
                     key={index}
                     style={[
                       styles.playerColHeader,
-                      selectedWinner === index && styles.playerColHeaderSelected,
+                      selectedWinner === index &&
+                        styles.playerColHeaderSelected,
                     ]}
                     onPress={() =>
-                      setSelectedWinner((prev) => (prev === index ? null : index))
+                      setSelectedWinner((prev) =>
+                        prev === index ? null : index,
+                      )
                     }
                   >
                     <Text
@@ -437,23 +590,33 @@ export const HandScoreboard: React.FC<HandScoreboardProps> = memo(
                   </View>
                 ) : (
                   rounds.map((round, idx) => (
-                    <View key={idx} style={styles.tableRow}>
-                      {round.scores.map((score, cellIdx) => (
-                        <View
-                          key={cellIdx}
-                          style={styles.playerCol}
-                        >
-                          <Text style={styles.cellText}>{score}</Text>
-                        </View>
-                      ))}
+                    <View
+                      key={idx}
+                      style={[
+                        styles.tableRow,
+                        round.type === "penalty" && styles.penaltyRowStyle,
+                      ]}
+                    >
+                      {round.scores
+                        .slice(0, playerCount)
+                        .map((score, cellIdx) => (
+                          <View key={cellIdx} style={styles.playerCol}>
+                            <Text style={styles.cellText}>
+                              {score}
+                              {round.type === "penalty" &&
+                              round.penaltyPlayer === cellIdx
+                                ? " ⚠️"
+                                : ""}
+                              {round.type === "score" &&
+                              round.fromWhoIndex === cellIdx
+                                ? " +50"
+                                : ""}
+                            </Text>
+                          </View>
+                        ))}
                       <View style={styles.roundCol}>
-                        <Text
-                          style={[
-                            styles.cellText,
-                            styles.roundNumText,
-                          ]}
-                        >
-                          {round.roundNumber}
+                        <Text style={[styles.cellText, styles.roundNumText]}>
+                          {round.type === "penalty" ? "P" : round.roundNumber}
                         </Text>
                       </View>
                     </View>
@@ -463,7 +626,7 @@ export const HandScoreboard: React.FC<HandScoreboardProps> = memo(
             </View>
           </View>
 
-          {/* ===== HAND TYPE + ADD ROUND (wireframe bottom) ===== */}
+          {/* ===== HAND TYPE + ADD ROUND (bottom controls) ===== */}
           <View style={styles.controlsPanel}>
             <Text style={styles.controlsSectionTitle}>
               {t.handScoreboard.selectHandType}
@@ -526,7 +689,7 @@ export const HandScoreboard: React.FC<HandScoreboardProps> = memo(
             {selectedWinner !== null && (
               <View style={styles.nzolRow}>
                 <Text style={styles.nzolLabel}>{t.common.nzol}</Text>
-                {players.map((_, index) => (
+                {activePlayers.map((_, index) => (
                   <TextInput
                     key={index}
                     style={styles.nzolInput}
@@ -549,24 +712,121 @@ export const HandScoreboard: React.FC<HandScoreboardProps> = memo(
                 styles.addRoundBtn,
                 (selectedWinner === null ||
                   selectedHandType === null ||
-                  gameEnded) && styles.addRoundBtnDisabled,
+                  gameEnded) &&
+                  styles.addRoundBtnDisabled,
               ]}
-              onPress={handleWin}
+              onPress={handleAddRound}
               disabled={
                 selectedWinner === null ||
                 selectedHandType === null ||
                 gameEnded
               }
             >
-              <Text style={styles.addRoundBtnText}>
-                {t.common.addRound}
-              </Text>
+              <Text style={styles.addRoundBtnText}>{t.common.addRound}</Text>
             </TouchableOpacity>
           </View>
+
+          {/* ===== "FROM WHO?" MODAL ===== */}
+          <Modal
+            visible={showFromWhoModal}
+            transparent={true}
+            animationType="fade"
+            onRequestClose={handleCancelFromWho}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalCard}>
+                <Text style={styles.fromWhoTitle}>
+                  {t.handScoreboard?.fromWho || "From who?"}
+                </Text>
+                <Text style={styles.fromWhoSubtitle}>
+                  {t.handScoreboard?.fromWhoDescription ||
+                    "Who discarded the card that won the round? (+50 points)"}
+                </Text>
+
+                <View style={styles.fromWhoPlayerBtns}>
+                  {activePlayers.map((player, index) => (
+                    <TouchableOpacity
+                      key={index}
+                      style={styles.fromWhoPlayerBtn}
+                      onPress={() => handleFromWhoSelection(index)}
+                    >
+                      <Text style={styles.fromWhoPlayerBtnText}>
+                        {player.name || `Player ${index + 1}`}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <TouchableOpacity
+                  style={styles.fromWhoNobodyBtn}
+                  onPress={() => handleFromWhoSelection(-1)}
+                >
+                  <Text style={styles.fromWhoNobodyBtnText}>
+                    {t.handScoreboard?.nobody || "Nobody"}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.fromWhoCancelBtn}
+                  onPress={handleCancelFromWho}
+                >
+                  <Text style={styles.fromWhoCancelText}>
+                    {t.common.cancel}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Modal>
+
+          {/* ===== PENALTY MODAL ===== */}
+          <Modal
+            visible={showPenaltyModal}
+            transparent={true}
+            animationType="fade"
+            onRequestClose={() => setShowPenaltyModal(false)}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalCard}>
+                <Text style={styles.penaltyModalTitle}>
+                  {t.setup?.applyPenalty || "Apply Penalty"}
+                </Text>
+                <Text style={styles.penaltyAmountText}>
+                  -{penaltyPoints} {t.setup?.points || "points"}
+                </Text>
+                <Text style={styles.penaltySelectText}>
+                  {t.setup?.selectPlayerToPenalize ||
+                    "Select player to penalize"}
+                </Text>
+
+                <View style={styles.penaltyPlayerBtns}>
+                  {activePlayers.map((player, index) => (
+                    <TouchableOpacity
+                      key={index}
+                      style={styles.penaltyPlayerBtn}
+                      onPress={() => handleApplyPenalty(index)}
+                    >
+                      <Text style={styles.penaltyPlayerBtnText}>
+                        {player.name || `Player ${index + 1}`}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <TouchableOpacity
+                  style={styles.penaltyCancelBtn}
+                  onPress={() => setShowPenaltyModal(false)}
+                >
+                  <Text style={styles.penaltyCancelText}>
+                    {t.common.cancel}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Modal>
         </Animated.View>
       </SafeAreaView>
     );
-  }
+  },
 );
 
 const styles = StyleSheet.create({
@@ -591,7 +851,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background.primary,
   },
 
-  /* ===== HEADER (same as Kout/Baloot) ===== */
+  /* ===== HEADER ===== */
   header: {
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -605,7 +865,13 @@ const styles = StyleSheet.create({
   headerSideBtn: {
     paddingVertical: 8,
     paddingHorizontal: 4,
-    minWidth: 50,
+    minWidth: 40,
+    alignItems: "center",
+  },
+  headerIconBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    minWidth: 36,
     alignItems: "center",
   },
   backText: {
@@ -627,10 +893,21 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     marginTop: 2,
   },
+  undoText: {
+    fontSize: 24,
+    color: colors.accent.blue,
+    fontWeight: "600",
+  },
+  penaltyIcon: {
+    fontSize: 20,
+  },
   resetIconText: {
     fontSize: 24,
     color: colors.accent.red,
     fontWeight: "600",
+  },
+  disabledBtn: {
+    opacity: 0.3,
   },
 
   /* ===== SCORE TABLE ===== */
@@ -662,6 +939,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 4,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
   playerColHeaderSelected: {
     backgroundColor: colors.accent.blue,
@@ -697,6 +976,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border.light,
   },
+  penaltyRowStyle: {
+    backgroundColor: colors.accent.red + "10",
+  },
   playerCol: {
     flex: 1,
     alignItems: "center",
@@ -708,7 +990,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   cellText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "600",
     textAlign: "center",
     color: colors.text.primary,
@@ -809,6 +1091,116 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "700",
     color: "#fff",
+  },
+
+  /* ===== FROM WHO MODAL ===== */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalCard: {
+    backgroundColor: colors.background.card,
+    borderRadius: 20,
+    padding: 24,
+    width: "85%",
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: colors.border.default,
+  },
+  fromWhoTitle: {
+    ...typography.heading,
+    fontSize: 22,
+    marginBottom: 8,
+    color: colors.text.primary,
+  },
+  fromWhoSubtitle: {
+    fontSize: 14,
+    color: colors.text.secondary,
+    marginBottom: 20,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  fromWhoPlayerBtns: {
+    width: "100%",
+    gap: 10,
+    marginBottom: 12,
+  },
+  fromWhoPlayerBtn: {
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    backgroundColor: colors.accent.blue,
+  },
+  fromWhoPlayerBtnText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  fromWhoNobodyBtn: {
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    width: "100%",
+    backgroundColor: colors.accent.green,
+    marginBottom: 12,
+  },
+  fromWhoNobodyBtnText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  fromWhoCancelBtn: {
+    paddingVertical: 10,
+  },
+  fromWhoCancelText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.text.muted,
+  },
+
+  /* ===== PENALTY MODAL ===== */
+  penaltyModalTitle: {
+    ...typography.heading,
+    fontSize: 20,
+    marginBottom: 12,
+    color: colors.text.primary,
+  },
+  penaltyAmountText: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: colors.accent.red,
+    marginBottom: 12,
+  },
+  penaltySelectText: {
+    fontSize: 14,
+    color: colors.text.secondary,
+    marginBottom: 16,
+  },
+  penaltyPlayerBtns: {
+    width: "100%",
+    gap: 10,
+    marginBottom: 16,
+  },
+  penaltyPlayerBtn: {
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    backgroundColor: colors.accent.red,
+  },
+  penaltyPlayerBtnText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  penaltyCancelBtn: {
+    paddingVertical: 10,
+  },
+  penaltyCancelText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.text.muted,
   },
 
   /* Game over / podium */

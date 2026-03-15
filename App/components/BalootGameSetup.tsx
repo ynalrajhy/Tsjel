@@ -8,11 +8,10 @@ import {
   TextInput,
 } from "react-native";
 import { useLanguage } from "../context/LanguageContext";
-import { colors, cardBase, cardSelected, typography } from "../theme/styles";
+import { colors, cardBase, typography } from "../theme/styles";
 
-interface KoutGameSetupProps {
+interface BalootGameSetupProps {
   onStartGame: (config: {
-    gameEndCondition: 51 | 101 | null;
     team1Name: string;
     team2Name: string;
     penaltyPoints: number;
@@ -20,26 +19,18 @@ interface KoutGameSetupProps {
   onBack: () => void;
 }
 
-export const KoutGameSetup: React.FC<KoutGameSetupProps> = ({
+export const BalootGameSetup: React.FC<BalootGameSetupProps> = ({
   onStartGame,
   onBack,
 }) => {
   const { t } = useLanguage();
-  const [selectedEnd, setSelectedEnd] = useState<51 | 101 | null>(null);
-  const [endSelected, setEndSelected] = useState(false);
   const [team1Name, setTeam1Name] = useState("Team 1");
   const [team2Name, setTeam2Name] = useState("Team 2");
   const [penaltyInput, setPenaltyInput] = useState("");
 
-  const handleSelectEnd = (endCondition: 51 | 101 | null) => {
-    setSelectedEnd(endCondition);
-    setEndSelected(true);
-  };
-
   const handleStartGame = () => {
     const penalty = parseInt(penaltyInput) || 0;
     onStartGame({
-      gameEndCondition: selectedEnd,
       team1Name: team1Name.trim() || "Team 1",
       team2Name: team2Name.trim() || "Team 2",
       penaltyPoints: Math.abs(penalty),
@@ -59,50 +50,22 @@ export const KoutGameSetup: React.FC<KoutGameSetupProps> = ({
           <Text style={styles.backButtonText}>←</Text>
         </TouchableOpacity>
         <View style={styles.headerCenter}>
-          <Text style={styles.title}>{t.games.kout.name}</Text>
+          <Text style={styles.title}>{t.games.baloot.name}</Text>
         </View>
         <View style={styles.backButton} />
       </View>
 
-      {/* Game End Selection */}
+      {/* Game Info */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>
-          {t.koutScoreboard.selectGameEnd}
+          {t.setup?.gameInfo || "Game Info"}
         </Text>
-        <Text style={styles.description}>
-          {t.setup?.chooseWhenGameEnds || "Choose when the game should end"}
-        </Text>
-      </View>
-
-      <View style={styles.endOptionsRow}>
-        {[
-          { value: 51 as const, label: "51" },
-          { value: 101 as const, label: "101" },
-          { value: null, label: t.koutScoreboard.gameEndUnlimited },
-        ].map((option) => (
-          <TouchableOpacity
-            key={option.label}
-            style={[
-              styles.endOptionBtn,
-              selectedEnd === option.value &&
-                endSelected &&
-                styles.endOptionBtnActive,
-            ]}
-            onPress={() => handleSelectEnd(option.value)}
-            activeOpacity={0.7}
-          >
-            <Text
-              style={[
-                styles.endOptionText,
-                selectedEnd === option.value &&
-                  endSelected &&
-                  styles.endOptionTextActive,
-              ]}
-            >
-              {option.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
+        <View style={styles.infoCard}>
+          <Text style={styles.infoText}>
+            {t.setup?.balootWinCondition ||
+              "First team to reach 152 points wins"}
+          </Text>
+        </View>
       </View>
 
       {/* Team Names */}
@@ -168,17 +131,15 @@ export const KoutGameSetup: React.FC<KoutGameSetupProps> = ({
       </View>
 
       {/* Start Game Button */}
-      {endSelected && (
-        <TouchableOpacity
-          style={styles.startBtn}
-          onPress={handleStartGame}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.startBtnText}>
-            {t.setup?.startGame || "Start Game"}
-          </Text>
-        </TouchableOpacity>
-      )}
+      <TouchableOpacity
+        style={styles.startBtn}
+        onPress={handleStartGame}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.startBtnText}>
+          {t.setup?.startGame || "Start Game"}
+        </Text>
+      </TouchableOpacity>
     </ScrollView>
   );
 };
@@ -233,32 +194,18 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
     textAlign: "center",
   },
-
-  /* Game End Options */
-  endOptionsRow: {
-    flexDirection: "row",
-    gap: 10,
-    marginTop: 8,
-  },
-  endOptionBtn: {
+  infoCard: {
     ...cardBase,
-    flex: 1,
-    paddingVertical: 16,
+    padding: 14,
+    marginTop: 8,
+    width: "100%",
     alignItems: "center",
-    justifyContent: "center",
   },
-  endOptionBtnActive: {
-    borderColor: colors.accent.blue,
-    backgroundColor: colors.accent.blue + "20",
-    borderWidth: 2,
-  },
-  endOptionText: {
-    fontSize: 16,
-    fontWeight: "600",
+  infoText: {
+    fontSize: 15,
     color: colors.text.primary,
-  },
-  endOptionTextActive: {
-    color: colors.accent.blue,
+    fontWeight: "500",
+    textAlign: "center",
   },
 
   /* Team Names */

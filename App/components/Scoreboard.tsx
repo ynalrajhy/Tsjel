@@ -13,7 +13,9 @@ import { useFirebase } from "../context/FirebaseContext";
 import { TeamCard } from "./TeamCard";
 import { PointButton } from "./PointButton";
 import { ActionButton } from "./ActionButton";
+import { BalootGameSetup } from "./BalootGameSetup";
 import { BalootScoreboard } from "./BalootScoreboard";
+import { HandGameSetup } from "./HandGameSetup";
 import { HandScoreboard } from "./HandScoreboard";
 import { KoutGameSetup } from "./KoutGameSetup";
 import { KoutScoreboard } from "./KoutScoreboard";
@@ -27,22 +29,32 @@ interface ScoreboardProps {
   onBack: () => void;
 }
 
-interface KoutScoreboardState {
-  stage: "setup" | "playing";
-  gameEndCondition: 51 | 101 | null;
-}
-
+// ===== KOUT WRAPPER =====
 const KoutScoreboardWrapper = memo(
   ({ gameConfig, onBack }: ScoreboardProps) => {
-    const [state, setState] = useState<KoutScoreboardState>({
+    const [state, setState] = useState<{
+      stage: "setup" | "playing";
+      gameEndCondition: 51 | 101 | null;
+      team1Name: string;
+      team2Name: string;
+      penaltyPoints: number;
+    }>({
       stage: "setup",
       gameEndCondition: null,
+      team1Name: "Team 1",
+      team2Name: "Team 2",
+      penaltyPoints: 0,
     });
 
-    const handleSelectGameEnd = (endCondition: 51 | 101 | null) => {
+    const handleStartGame = (config: {
+      gameEndCondition: 51 | 101 | null;
+      team1Name: string;
+      team2Name: string;
+      penaltyPoints: number;
+    }) => {
       setState({
         stage: "playing",
-        gameEndCondition: endCondition,
+        ...config,
       });
     };
 
@@ -50,25 +62,133 @@ const KoutScoreboardWrapper = memo(
       setState({
         stage: "setup",
         gameEndCondition: null,
+        team1Name: "Team 1",
+        team2Name: "Team 2",
+        penaltyPoints: 0,
       });
       onBack();
     };
 
     if (state.stage === "setup") {
-      return (
-        <KoutGameSetup onSelectGameEnd={handleSelectGameEnd} onBack={onBack} />
-      );
+      return <KoutGameSetup onStartGame={handleStartGame} onBack={onBack} />;
     }
 
     return (
       <KoutScoreboard
         gameEndCondition={state.gameEndCondition}
+        team1Name={state.team1Name}
+        team2Name={state.team2Name}
+        penaltyPoints={state.penaltyPoints}
         onBack={handleBackFromGame}
       />
     );
   },
 );
 
+// ===== BALOOT WRAPPER =====
+const BalootScoreboardWrapper = memo(
+  ({ gameConfig, onBack }: ScoreboardProps) => {
+    const [state, setState] = useState<{
+      stage: "setup" | "playing";
+      team1Name: string;
+      team2Name: string;
+      penaltyPoints: number;
+    }>({
+      stage: "setup",
+      team1Name: "Team 1",
+      team2Name: "Team 2",
+      penaltyPoints: 0,
+    });
+
+    const handleStartGame = (config: {
+      team1Name: string;
+      team2Name: string;
+      penaltyPoints: number;
+    }) => {
+      setState({
+        stage: "playing",
+        ...config,
+      });
+    };
+
+    const handleBackFromGame = () => {
+      setState({
+        stage: "setup",
+        team1Name: "Team 1",
+        team2Name: "Team 2",
+        penaltyPoints: 0,
+      });
+      onBack();
+    };
+
+    if (state.stage === "setup") {
+      return <BalootGameSetup onStartGame={handleStartGame} onBack={onBack} />;
+    }
+
+    return (
+      <BalootScoreboard
+        team1Name={state.team1Name}
+        team2Name={state.team2Name}
+        penaltyPoints={state.penaltyPoints}
+        onBack={handleBackFromGame}
+      />
+    );
+  },
+);
+
+// ===== HAND WRAPPER =====
+const HandScoreboardWrapper = memo(
+  ({ gameConfig, onBack }: ScoreboardProps) => {
+    const [state, setState] = useState<{
+      stage: "setup" | "playing";
+      playerCount: number;
+      playerNames: string[];
+      penaltyPoints: number;
+    }>({
+      stage: "setup",
+      playerCount: 4,
+      playerNames: ["Player 1", "Player 2", "Player 3", "Player 4"],
+      penaltyPoints: 0,
+    });
+
+    const handleStartGame = (config: {
+      playerCount: number;
+      playerNames: string[];
+      penaltyPoints: number;
+    }) => {
+      setState({
+        stage: "playing",
+        ...config,
+      });
+    };
+
+    const handleBackFromGame = () => {
+      setState({
+        stage: "setup",
+        playerCount: 4,
+        playerNames: ["Player 1", "Player 2", "Player 3", "Player 4"],
+        penaltyPoints: 0,
+      });
+      onBack();
+    };
+
+    if (state.stage === "setup") {
+      return <HandGameSetup onStartGame={handleStartGame} onBack={onBack} />;
+    }
+
+    return (
+      <HandScoreboard
+        gameConfig={gameConfig}
+        playerCount={state.playerCount}
+        playerNames={state.playerNames}
+        penaltyPoints={state.penaltyPoints}
+        onBack={handleBackFromGame}
+      />
+    );
+  },
+);
+
+// ===== FALLBACK POINT SELECTION SCOREBOARD =====
 const PointSelectionScoreboard = memo(
   ({ gameConfig, onBack }: ScoreboardProps) => {
     const { t } = useLanguage();
@@ -262,6 +382,7 @@ const PointSelectionScoreboard = memo(
   },
 );
 
+// ===== MAIN SCOREBOARD ROUTER =====
 export const Scoreboard: React.FC<ScoreboardProps> = memo(
   ({ gameConfig, onBack }) => {
     const content = useMemo(() => {
@@ -271,10 +392,14 @@ export const Scoreboard: React.FC<ScoreboardProps> = memo(
         );
       }
       if (gameConfig.scoringMode === "hand") {
-        return <HandScoreboard gameConfig={gameConfig} onBack={onBack} />;
+        return (
+          <HandScoreboardWrapper gameConfig={gameConfig} onBack={onBack} />
+        );
       }
       if (gameConfig.scoringMode === "manualInput") {
-        return <BalootScoreboard gameConfig={gameConfig} onBack={onBack} />;
+        return (
+          <BalootScoreboardWrapper gameConfig={gameConfig} onBack={onBack} />
+        );
       }
       return (
         <PointSelectionScoreboard gameConfig={gameConfig} onBack={onBack} />

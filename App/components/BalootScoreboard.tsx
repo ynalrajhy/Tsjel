@@ -15,42 +15,50 @@ import {
 import { useScoreStorage } from "../hooks/useScoreStorage";
 import { useFirebase } from "../context/FirebaseContext";
 import { ActionButton } from "./ActionButton";
-import { GameConfig } from "../config/games";
 import { useLanguage } from "../context/LanguageContext";
 import { colors, cardBase, typography } from "../theme/styles";
 import { useSwipeToGoBack } from "../hooks/useSwipeToGoBack";
 
 interface BalootScoreboardProps {
-  gameConfig: GameConfig;
+  team1Name: string;
+  team2Name: string;
+  penaltyPoints: number;
   onBack: () => void;
-  isTransitioning?: boolean;
 }
 
 interface RoundRecord {
   id: string;
   round: number;
+  type: "score" | "penalty";
   team1Points: number;
   team2Points: number;
   team1Cumulative: number;
   team2Cumulative: number;
+  penaltyTeam?: 1 | 2;
 }
 
 export const BalootScoreboard: React.FC<BalootScoreboardProps> = memo(
-  ({ gameConfig, onBack }) => {
+  ({
+    team1Name: initialTeam1Name,
+    team2Name: initialTeam2Name,
+    penaltyPoints,
+    onBack,
+  }) => {
     const { t } = useLanguage();
     const { saveGameResult, user } = useFirebase();
     const { team1, team2, updateTeam1, updateTeam2, resetScores, isLoading } =
-      useScoreStorage(gameConfig.id);
+      useScoreStorage("baloot");
 
-    const targetScore = gameConfig.winCondition?.targetScore || 152;
+    const targetScore = 152;
 
     const [roundHistory, setRoundHistory] = useState<RoundRecord[]>([]);
     const [gameSaved, setGameSaved] = useState(false);
     const [gameEnded, setGameEnded] = useState(false);
     const [showGameSummary, setShowGameSummary] = useState(false);
     const [showAddRoundModal, setShowAddRoundModal] = useState(false);
-    const [team1Name, setTeam1Name] = useState(team1.name || "Team 1");
-    const [team2Name, setTeam2Name] = useState(team2.name || "Team 2");
+    const [showPenaltyModal, setShowPenaltyModal] = useState(false);
+    const [team1NameState, setTeam1NameState] = useState(initialTeam1Name);
+    const [team2NameState, setTeam2NameState] = useState(initialTeam2Name);
     const [editingTeam, setEditingTeam] = useState<1 | 2 | null>(null);
     const [modalTeam1Input, setModalTeam1Input] = useState("");
     const [modalTeam2Input, setModalTeam2Input] = useState("");
@@ -69,9 +77,9 @@ export const BalootScoreboard: React.FC<BalootScoreboardProps> = memo(
 
     const winner =
       currentTeam1Score > currentTeam2Score
-        ? team1Name
+        ? team1NameState
         : currentTeam2Score > currentTeam1Score
-          ? team2Name
+          ? team2NameState
           : null;
 
     const handleOpenAddRound = () => {
@@ -91,8 +99,9 @@ export const BalootScoreboard: React.FC<BalootScoreboardProps> = memo(
         (modalTeam2Input.trim() === "" || isNaN(t2Points))
       ) {
         Alert.alert(
-          t.balootScoreboard.invalidInput,
-          t.balootScoreboard.pleaseEnterAtLeastOneScore,
+          t.balootScoreboard?.invalidInput || "Invalid Input",
+          t.balootScoreboard?.pleaseEnterAtLeastOneScore ||
+            "Please enter at least one score",
         );
         return;
       }
@@ -104,30 +113,32 @@ export const BalootScoreboard: React.FC<BalootScoreboardProps> = memo(
 
       if (team1Points < 0 || team2Points < 0) {
         Alert.alert(
-          t.balootScoreboard.invalidInput,
-          t.balootScoreboard.pleaseEnterValidNumberTeam.replace(
+          t.balootScoreboard?.invalidInput || "Invalid Input",
+          t.balootScoreboard?.pleaseEnterValidNumberTeam?.replace(
             "{team}",
             "both",
-          ),
+          ) || "Please enter valid numbers",
         );
         return;
       }
 
       if (team1Points === 0 && team2Points === 0) {
         Alert.alert(
-          t.balootScoreboard.invalidInput,
-          t.balootScoreboard.pleaseEnterAtLeastOneScore,
+          t.balootScoreboard?.invalidInput || "Invalid Input",
+          t.balootScoreboard?.pleaseEnterAtLeastOneScore ||
+            "Please enter at least one score",
         );
         return;
       }
 
-      // Calculate cumulative from round history, NOT from storage
+      // Calculate cumulative from round history
       const newTeam1Cumulative = currentTeam1Score + team1Points;
       const newTeam2Cumulative = currentTeam2Score + team2Points;
 
       const newRound: RoundRecord = {
         id: `round-${Date.now()}`,
         round: roundHistory.length + 1,
+        type: "score",
         team1Points: team1Points,
         team2Points: team2Points,
         team1Cumulative: newTeam1Cumulative,
@@ -135,8 +146,6 @@ export const BalootScoreboard: React.FC<BalootScoreboardProps> = memo(
       };
 
       setRoundHistory([...roundHistory, newRound]);
-
-      // Sync storage for save/persistence
       updateTeam1({ score: newTeam1Cumulative });
       updateTeam2({ score: newTeam2Cumulative });
       setShowAddRoundModal(false);
@@ -150,7 +159,39 @@ export const BalootScoreboard: React.FC<BalootScoreboardProps> = memo(
         setShowGameSummary(true);
       }
 
-      // Auto-scroll to bottom
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    };
+
+    const handleApplyPenalty = (penalizedTeam: 1 | 2) => {
+      if (gameEnded || penaltyPoints === 0) return;
+
+      let newTeam1Cumulative = currentTeam1Score;
+      let newTeam2Cumulative = currentTeam2Score;
+
+      if (penalizedTeam === 1) {
+        newTeam1Cumulative -= penaltyPoints;
+      } else {
+        newTeam2Cumulative -= penaltyPoints;
+      }
+
+      const penaltyRecord: RoundRecord = {
+        id: `penalty-${Date.now()}`,
+        round: roundHistory.length + 1,
+        type: "penalty",
+        team1Points: penalizedTeam === 1 ? -penaltyPoints : 0,
+        team2Points: penalizedTeam === 2 ? -penaltyPoints : 0,
+        team1Cumulative: newTeam1Cumulative,
+        team2Cumulative: newTeam2Cumulative,
+        penaltyTeam: penalizedTeam,
+      };
+
+      setRoundHistory([...roundHistory, penaltyRecord]);
+      updateTeam1({ score: newTeam1Cumulative });
+      updateTeam2({ score: newTeam2Cumulative });
+      setShowPenaltyModal(false);
+
       setTimeout(() => {
         scrollViewRef.current?.scrollToEnd({ animated: true });
       }, 100);
@@ -176,12 +217,12 @@ export const BalootScoreboard: React.FC<BalootScoreboardProps> = memo(
 
     const handleSaveGame = async () => {
       const gameWinner =
-        currentTeam1Score > currentTeam2Score ? team1Name : team2Name;
+        currentTeam1Score > currentTeam2Score ? team1NameState : team2NameState;
       try {
         await saveGameResult({
           gameType: "baloot",
-          team1: { name: team1Name, score: currentTeam1Score },
-          team2: { name: team2Name, score: currentTeam2Score },
+          team1: { name: team1NameState, score: currentTeam1Score },
+          team2: { name: team2NameState, score: currentTeam2Score },
           winner: gameWinner,
           rounds: roundHistory.length,
         });
@@ -201,7 +242,7 @@ export const BalootScoreboard: React.FC<BalootScoreboardProps> = memo(
     const handleReset = () => {
       Alert.alert(
         t.common.resetGame,
-        "Are you sure you want to reset the game?",
+        t.setup?.areYouSureReset || "Are you sure you want to reset the game?",
         [
           { text: t.common.cancel, onPress: () => {} },
           {
@@ -226,8 +267,19 @@ export const BalootScoreboard: React.FC<BalootScoreboardProps> = memo(
       setGameEnded(false);
     };
 
-    // Format cell: [cumulative] / [round points]
-    const formatCell = (cumulative: number, points: number): string => {
+    // Format cell: [cumulative] / [round points] or penalty indicator
+    const formatCell = (round: RoundRecord, teamNumber: 1 | 2): string => {
+      const cumulative =
+        teamNumber === 1 ? round.team1Cumulative : round.team2Cumulative;
+      const points = teamNumber === 1 ? round.team1Points : round.team2Points;
+
+      if (round.type === "penalty") {
+        if (round.penaltyTeam === teamNumber) {
+          return `${cumulative} / ${points}`;
+        } else {
+          return `${cumulative} / -`;
+        }
+      }
       return `${cumulative} / ${points}`;
     };
 
@@ -249,12 +301,22 @@ export const BalootScoreboard: React.FC<BalootScoreboardProps> = memo(
           <TouchableOpacity onPress={onBack} style={styles.headerSideBtn}>
             <Text style={styles.backText}>←</Text>
           </TouchableOpacity>
+
+          {/* Penalty Icon */}
+          {penaltyPoints > 0 && (
+            <TouchableOpacity
+              onPress={() => !gameEnded && setShowPenaltyModal(true)}
+              disabled={gameEnded}
+              style={[styles.headerIconBtn, gameEnded && styles.disabledBtn]}
+            >
+              <Text style={styles.penaltyIcon}>⚠️</Text>
+            </TouchableOpacity>
+          )}
+
           <View style={styles.headerCenter}>
-            <Text style={styles.headerTitle}>
-              {t.games[gameConfig.id as keyof typeof t.games]?.name ||
-                gameConfig.name}
-            </Text>
+            <Text style={styles.headerTitle}>{t.games.baloot.name}</Text>
           </View>
+
           <TouchableOpacity
             onPress={handleUndoRound}
             disabled={roundHistory.length === 0 || gameEnded}
@@ -276,9 +338,9 @@ export const BalootScoreboard: React.FC<BalootScoreboardProps> = memo(
                 {editingTeam === 1 ? (
                   <TextInput
                     style={styles.teamNameInput}
-                    value={team1Name}
+                    value={team1NameState}
                     onChangeText={(text) => {
-                      setTeam1Name(text);
+                      setTeam1NameState(text);
                       updateTeam1({ name: text });
                     }}
                     onBlur={() => setEditingTeam(null)}
@@ -288,7 +350,7 @@ export const BalootScoreboard: React.FC<BalootScoreboardProps> = memo(
                 ) : (
                   <TouchableOpacity onPress={() => setEditingTeam(1)}>
                     <Text style={[styles.tableHeaderText, styles.team1Color]}>
-                      {team1Name}
+                      {team1NameState}
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -297,9 +359,9 @@ export const BalootScoreboard: React.FC<BalootScoreboardProps> = memo(
                 {editingTeam === 2 ? (
                   <TextInput
                     style={styles.teamNameInput}
-                    value={team2Name}
+                    value={team2NameState}
                     onChangeText={(text) => {
-                      setTeam2Name(text);
+                      setTeam2NameState(text);
                       updateTeam2({ name: text });
                     }}
                     onBlur={() => setEditingTeam(null)}
@@ -309,7 +371,7 @@ export const BalootScoreboard: React.FC<BalootScoreboardProps> = memo(
                 ) : (
                   <TouchableOpacity onPress={() => setEditingTeam(2)}>
                     <Text style={[styles.tableHeaderText, styles.team2Color]}>
-                      {team2Name}
+                      {team2NameState}
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -334,12 +396,24 @@ export const BalootScoreboard: React.FC<BalootScoreboardProps> = memo(
                 </View>
               ) : (
                 roundHistory.map((round) => (
-                  <View key={round.id} style={styles.tableRow}>
+                  <View
+                    key={round.id}
+                    style={[
+                      styles.tableRow,
+                      round.type === "penalty" && styles.penaltyRowStyle,
+                    ]}
+                  >
                     <Text style={[styles.cellText, styles.teamCol]}>
-                      {formatCell(round.team1Cumulative, round.team1Points)}
+                      {formatCell(round, 1)}
+                      {round.type === "penalty" && round.penaltyTeam === 1
+                        ? " ⚠️"
+                        : ""}
                     </Text>
                     <Text style={[styles.cellText, styles.teamCol]}>
-                      {formatCell(round.team2Cumulative, round.team2Points)}
+                      {formatCell(round, 2)}
+                      {round.type === "penalty" && round.penaltyTeam === 2
+                        ? " ⚠️"
+                        : ""}
                     </Text>
                     <Text
                       style={[
@@ -374,7 +448,7 @@ export const BalootScoreboard: React.FC<BalootScoreboardProps> = memo(
           </TouchableOpacity>
 
           {/* Save Game */}
-          {(currentTeam1Score > 0 || currentTeam2Score > 0) &&
+          {(currentTeam1Score !== 0 || currentTeam2Score !== 0) &&
             user &&
             !gameSaved && (
               <View style={styles.saveSection}>
@@ -393,6 +467,54 @@ export const BalootScoreboard: React.FC<BalootScoreboardProps> = memo(
           )}
         </View>
 
+        {/* ===== PENALTY MODAL ===== */}
+        <Modal
+          visible={showPenaltyModal}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setShowPenaltyModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard}>
+              <Text style={styles.penaltyModalTitle}>
+                {t.setup?.applyPenalty || "Apply Penalty"}
+              </Text>
+              <Text style={styles.penaltyAmountText}>
+                -{penaltyPoints} {t.setup?.points || "points"}
+              </Text>
+              <Text style={styles.penaltySelectText}>
+                {t.setup?.selectTeamToPenalize || "Select team to penalize"}
+              </Text>
+
+              <View style={styles.penaltyTeamBtns}>
+                <TouchableOpacity
+                  style={styles.penaltyTeamBtn}
+                  onPress={() => handleApplyPenalty(1)}
+                >
+                  <Text style={styles.penaltyTeamBtnText}>
+                    {team1NameState}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.penaltyTeamBtn}
+                  onPress={() => handleApplyPenalty(2)}
+                >
+                  <Text style={styles.penaltyTeamBtnText}>
+                    {team2NameState}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                style={styles.penaltyCancelBtn}
+                onPress={() => setShowPenaltyModal(false)}
+              >
+                <Text style={styles.penaltyCancelText}>{t.common.cancel}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
         {/* ===== ADD ROUND MODAL ===== */}
         <Modal
           visible={showAddRoundModal}
@@ -405,13 +527,12 @@ export const BalootScoreboard: React.FC<BalootScoreboardProps> = memo(
             style={styles.modalOverlay}
           >
             <View style={styles.modalCard}>
-              <Text style={styles.modalTitle}>{t.common.addRound}</Text>
+              <Text style={styles.addRoundModalTitle}>{t.common.addRound}</Text>
 
               <View style={styles.modalInputsRow}>
-                {/* Team 1 Input */}
                 <View style={styles.modalInputBlock}>
                   <Text style={[styles.modalInputLabel, styles.team1Color]}>
-                    {team1Name}
+                    {team1NameState}
                   </Text>
                   <TextInput
                     style={styles.modalInput}
@@ -425,10 +546,9 @@ export const BalootScoreboard: React.FC<BalootScoreboardProps> = memo(
                   />
                 </View>
 
-                {/* Team 2 Input */}
                 <View style={styles.modalInputBlock}>
                   <Text style={[styles.modalInputLabel, styles.team2Color]}>
-                    {team2Name}
+                    {team2NameState}
                   </Text>
                   <TextInput
                     style={styles.modalInput}
@@ -480,14 +600,18 @@ export const BalootScoreboard: React.FC<BalootScoreboardProps> = memo(
               </View>
               <View style={styles.gameSummaryScoresRow}>
                 <View style={styles.gameSummaryScoreBlock}>
-                  <Text style={styles.gameSummaryScoreTeam}>{team1Name}</Text>
+                  <Text style={styles.gameSummaryScoreTeam}>
+                    {team1NameState}
+                  </Text>
                   <Text style={styles.gameSummaryScoreValue}>
                     {currentTeam1Score}
                   </Text>
                 </View>
                 <Text style={styles.gameSummaryVs}>vs</Text>
                 <View style={styles.gameSummaryScoreBlock}>
-                  <Text style={styles.gameSummaryScoreTeam}>{team2Name}</Text>
+                  <Text style={styles.gameSummaryScoreTeam}>
+                    {team2NameState}
+                  </Text>
                   <Text style={styles.gameSummaryScoreValue}>
                     {currentTeam2Score}
                   </Text>
@@ -546,7 +670,13 @@ const styles = StyleSheet.create({
   headerSideBtn: {
     paddingVertical: 8,
     paddingHorizontal: 4,
-    minWidth: 50,
+    minWidth: 40,
+    alignItems: "center",
+  },
+  headerIconBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    minWidth: 36,
     alignItems: "center",
   },
   backText: {
@@ -567,6 +697,9 @@ const styles = StyleSheet.create({
     fontSize: 24,
     color: colors.accent.blue,
     fontWeight: "600",
+  },
+  penaltyIcon: {
+    fontSize: 20,
   },
   disabledBtn: {
     opacity: 0.3,
@@ -645,6 +778,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border.light,
   },
+  penaltyRowStyle: {
+    backgroundColor: colors.accent.red + "10",
+  },
   cellText: {
     fontSize: 17,
     fontWeight: "700",
@@ -720,6 +856,49 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 
+  /* ===== PENALTY MODAL ===== */
+  penaltyModalTitle: {
+    ...typography.heading,
+    fontSize: 20,
+    marginBottom: 12,
+    color: colors.text.primary,
+  },
+  penaltyAmountText: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: colors.accent.red,
+    marginBottom: 12,
+  },
+  penaltySelectText: {
+    fontSize: 14,
+    color: colors.text.secondary,
+    marginBottom: 16,
+  },
+  penaltyTeamBtns: {
+    width: "100%",
+    gap: 10,
+    marginBottom: 16,
+  },
+  penaltyTeamBtn: {
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    backgroundColor: colors.accent.red,
+  },
+  penaltyTeamBtnText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  penaltyCancelBtn: {
+    paddingVertical: 10,
+  },
+  penaltyCancelText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.text.muted,
+  },
+
   /* ===== ADD ROUND MODAL ===== */
   modalOverlay: {
     flex: 1,
@@ -736,7 +915,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: colors.border.default,
   },
-  modalTitle: {
+  addRoundModalTitle: {
     ...typography.heading,
     fontSize: 20,
     marginBottom: 20,

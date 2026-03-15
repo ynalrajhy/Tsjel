@@ -44,6 +44,33 @@ export const en = {
     close: "Close",
   },
 
+  // Setup
+  setup: {
+    teamNames: "Team Names",
+    playerNames: "Player Names",
+    optionalTeamNames: "Optional — defaults to Team 1 & Team 2",
+    optionalPlayerNames: "Optional — defaults to Player 1, 2, 3...",
+    team1: "Team 1",
+    team2: "Team 2",
+    penaltyPoints: "Penalty Points",
+    penaltyDescription:
+      "Points deducted when a penalty is applied during the game",
+    pointsPerPenalty: "points per penalty",
+    startGame: "Start Game",
+    gameInfo: "Game Info",
+    balootWinCondition: "First team to reach 152 points wins",
+    handInfo: "8 rounds — lowest score wins",
+    numberOfPlayers: "Number of Players",
+    selectPlayerCount: "Select how many players are in the game",
+    players: "Players",
+    chooseWhenGameEnds: "Choose when the game should end",
+    applyPenalty: "Apply Penalty",
+    points: "points",
+    selectTeamToPenalize: "Select team to penalize",
+    selectPlayerToPenalize: "Select player to penalize",
+    areYouSureReset: "Are you sure you want to reset the game?",
+  },
+
   // Hand Scoreboard
   handScoreboard: {
     selectHandType: "Select Hand Type",
@@ -53,6 +80,10 @@ export const en = {
     handRecorded: "Hand Recorded",
     roundWonHand: "Round {round}: {name} won a {handType}",
     areYouSureReset: "Are you sure you want to reset the game?",
+    fromWho: "From who?",
+    fromWhoDescription:
+      "Who discarded the card that won the round? (+50 points)",
+    nobody: "Nobody",
     handTypes: {
       regular: "Regular",
       jokerColored: "Joker/Colored",

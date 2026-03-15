@@ -1,34 +1,42 @@
-import { useState, useEffect } from 'react';
-import { Player } from '../models/Score';
-import { loadHandScores, saveHandScores } from '../utils/handStorage';
+import { useState, useEffect } from "react";
+import { Player } from "../models/Score";
+import { loadHandScores, saveHandScores } from "../utils/handStorage";
 
-export const useHandStorage = (gameId: string) => {
-  const [players, setPlayers] = useState<Player[]>([
-    { name: 'Player 1', score: 0 },
-    { name: 'Player 2', score: 0 },
-    { name: 'Player 3', score: 0 },
-    { name: 'Player 4', score: 0 },
-  ]);
-  const [isLoading, setIsLoading] = useState(true);
+export const useHandStorage = (
+  gameId: string,
+  playerCount: number = 4,
+  initialNames?: string[],
+) => {
+  // Build initial players from the setup names and count
+  const buildInitialPlayers = (): Player[] => {
+    const result: Player[] = [];
+    for (let i = 0; i < playerCount; i++) {
+      result.push({
+        name: initialNames?.[i] || `Player ${i + 1}`,
+        score: 0,
+      });
+    }
+    return result;
+  };
 
+  const [players, setPlayers] = useState<Player[]>(buildInitialPlayers);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // No longer load from AsyncStorage on mount — setup names are the source of truth
+  // We only use storage for saving during gameplay
   useEffect(() => {
-    const initializeScores = async () => {
-      const loadedPlayers = await loadHandScores(gameId);
-      setPlayers(loadedPlayers);
-      setIsLoading(false);
-    };
-
-    initializeScores();
+    setIsLoading(false);
   }, [gameId]);
 
   useEffect(() => {
-    if (!isLoading) {
+    if (!isLoading && gameId !== "dummy") {
       saveHandScores(gameId, players);
     }
   }, [players, isLoading, gameId]);
 
   const updatePlayer = (index: number, updates: Partial<Player>) => {
     setPlayers((prev) => {
+      if (index < 0 || index >= prev.length) return prev;
       const newPlayers = [...prev];
       newPlayers[index] = { ...newPlayers[index], ...updates };
       return newPlayers;

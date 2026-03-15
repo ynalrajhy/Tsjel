@@ -44,6 +44,32 @@ export const ar = {
     close: "إغلاق",
   },
 
+  // Setup
+  setup: {
+    teamNames: "أسماء الفرق",
+    playerNames: "أسماء اللاعبين",
+    optionalTeamNames: "اختياري — الافتراضي فريق 1 وفريق 2",
+    optionalPlayerNames: "اختياري — الافتراضي لاعب 1، 2، 3...",
+    team1: "فريق 1",
+    team2: "فريق 2",
+    penaltyPoints: "نقاط الجزاء",
+    penaltyDescription: "النقاط المخصومة عند تطبيق جزاء أثناء اللعبة",
+    pointsPerPenalty: "نقاط لكل جزاء",
+    startGame: "ابدأ اللعبة",
+    gameInfo: "معلومات اللعبة",
+    balootWinCondition: "أول فريق يصل إلى 152 نقطة يفوز",
+    handInfo: "8 جولات — أقل نقاط يفوز",
+    numberOfPlayers: "عدد اللاعبين",
+    selectPlayerCount: "اختر عدد اللاعبين في اللعبة",
+    players: "لاعبين",
+    chooseWhenGameEnds: "اختر متى تنتهي اللعبة",
+    applyPenalty: "تطبيق جزاء",
+    points: "نقاط",
+    selectTeamToPenalize: "اختر الفريق لتطبيق الجزاء",
+    selectPlayerToPenalize: "اختر اللاعب لتطبيق الجزاء",
+    areYouSureReset: "هل أنت متأكد أنك تريد إعادة تعيين اللعبة؟",
+  },
+
   // Hand Scoreboard
   handScoreboard: {
     selectHandType: "اختر نوع اليد",
@@ -53,6 +79,9 @@ export const ar = {
     handRecorded: "تم تسجيل اليد",
     roundWonHand: "الجولة {round}: {name} فاز بـ {handType}",
     areYouSureReset: "هل أنت متأكد أنك تريد إعادة تعيين اللعبة؟",
+    fromWho: "من عنده؟",
+    fromWhoDescription: "من رمى الورقة اللي فاز فيها اللاعب؟ (+50 نقطة)",
+    nobody: "لا أحد",
     handTypes: {
       regular: "عادي",
       jokerColored: "جوكر/ لون",

@@ -47,6 +47,15 @@ interface Round {
   scores: number[];
 }
 
+const HAND_TYPE_ORDER: HandType[] = [
+  "regular",
+  "jokerColored",
+  "oneJokerColored",
+  "twoJokersColored",
+  "zat",
+  "finished",
+];
+
 export const HandScoreboard: React.FC<HandScoreboardProps> = memo(
   ({ gameConfig, onBack, isTransitioning = false }) => {
     const { t } = useLanguage();
@@ -74,6 +83,7 @@ export const HandScoreboard: React.FC<HandScoreboardProps> = memo(
     const [rounds, setRounds] = useState<Round[]>([]);
     const [nzolValues, setNzolValues] = useState<string[]>(["", "", "", ""]);
     const gameSavedRef = useRef(false);
+    const tableScrollRef = useRef<ScrollView>(null);
 
     const HAND_TYPES: Record<HandType, HandTypeConfig> = {
       regular: {
@@ -204,6 +214,10 @@ export const HandScoreboard: React.FC<HandScoreboardProps> = memo(
       setSelectedWinner(null);
       setSelectedHandType(null);
       setNzolValues(["", "", "", ""]);
+
+      setTimeout(() => {
+        tableScrollRef.current?.scrollToEnd({ animated: true });
+      }, 100);
     };
 
     const handleReset = () => {
@@ -249,17 +263,20 @@ export const HandScoreboard: React.FC<HandScoreboardProps> = memo(
               contentContainerStyle={styles.contentContainer}
               removeClippedSubviews={true}
             >
+              {/* Same header as Kout/Baloot */}
               <View style={styles.header}>
-                <TouchableOpacity onPress={onBack} style={styles.backButton}>
-                  <Text style={styles.backButtonText}>←</Text>
+                <TouchableOpacity onPress={onBack} style={styles.headerSideBtn}>
+                  <Text style={styles.backText}>←</Text>
                 </TouchableOpacity>
                 <View style={styles.headerCenter}>
-                  <Text style={styles.title}>{t.common.gameOver}!</Text>
-                  <Text style={styles.subtitle}>{t.common.finalResults}</Text>
+                  <Text style={styles.headerTitle}>{t.common.gameOver}!</Text>
+                  <Text style={styles.headerSubtitle}>
+                    {t.common.finalResults}
+                  </Text>
                 </View>
                 <TouchableOpacity
                   onPress={handleReset}
-                  style={styles.resetIconButton}
+                  style={styles.headerSideBtn}
                 >
                   <Text style={styles.resetIconText}>↻</Text>
                 </TouchableOpacity>
@@ -352,104 +369,118 @@ export const HandScoreboard: React.FC<HandScoreboardProps> = memo(
           style={[styles.wrapper, swipeHandlers.animatedStyle]}
           {...swipeHandlers.panHandlers}
         >
-          <ScrollView
-            style={styles.container}
-            contentContainerStyle={styles.contentContainer}
-            removeClippedSubviews={true}
-          >
-            <View style={styles.header}>
-              <TouchableOpacity onPress={onBack} style={styles.backButton}>
-                <Text style={styles.backButtonText}>{t.common.back}</Text>
-              </TouchableOpacity>
-              <View style={styles.headerCenter}>
-                <Text style={styles.title}>
-                  {t.games[gameConfig.id as keyof typeof t.games]?.name ||
-                    gameConfig.name}
-                </Text>
-                <Text style={styles.roundIndicator}>
-                  {t.common.round} {currentRound} / 8
-                </Text>
-              </View>
-              <TouchableOpacity
-                onPress={handleReset}
-                style={styles.resetIconButton}
-              >
-                <Text style={styles.resetIconText}>↻</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.playersContainer}>
-              {players.map((player, index) => {
-                const sortedIndex = sortedPlayers.findIndex(
-                  (p) => p.name === player.name
-                );
-                const isSelected = selectedWinner === index;
-                return (
-                  <View key={index} style={styles.playerCardWrapper}>
-                    <TouchableOpacity
-                      style={[
-                        styles.playerCard,
-                        sortedIndex === 0 && styles.winningPlayer,
-                        isSelected && styles.playerCardSelected,
-                      ]}
-                      onPress={() => setSelectedWinner(index)}
-                      activeOpacity={0.7}
-                    >
-                      <View style={styles.playerCardContent}>
-                        <TextInput
-                          style={[
-                            styles.playerNameInput,
-                            isSelected && styles.playerNameInputSelected,
-                          ]}
-                          value={player.name}
-                          onChangeText={(name) => updatePlayer(index, { name })}
-                          placeholder={`${t.common.player} ${index + 1}`}
-                        />
-                        <View style={styles.scoreContainer}>
-                          <Text
-                            style={[
-                              styles.playerScore,
-                              isSelected && styles.playerScoreSelected,
-                            ]}
-                            numberOfLines={1}
-                            adjustsFontSizeToFit={true}
-                            minimumFontScale={0.7}
-                          >
-                            {player.score}
-                          </Text>
-                        </View>
-                      </View>
-                    </TouchableOpacity>
-                    <TextInput
-                      style={styles.nzolInput}
-                      value={nzolValues[index]}
-                      onChangeText={(text) => {
-                        const numericValue = text.replace(/[^0-9]/g, "");
-                        const newNzolValues = [...nzolValues];
-                        newNzolValues[index] = numericValue;
-                        setNzolValues(newNzolValues);
-                      }}
-                      placeholder={t.common.nzol}
-                      keyboardType="numeric"
-                    />
-                  </View>
-                );
-              })}
-            </View>
-
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>
-                {t.handScoreboard.selectHandType}
+          {/* ===== HEADER (same as Kout and Baloot) ===== */}
+          <View style={styles.header}>
+            <TouchableOpacity onPress={onBack} style={styles.headerSideBtn}>
+              <Text style={styles.backText}>←</Text>
+            </TouchableOpacity>
+            <View style={styles.headerCenter}>
+              <Text style={styles.headerTitle}>
+                {t.games[gameConfig.id as keyof typeof t.games]?.name ||
+                  gameConfig.name}
               </Text>
-              <View style={styles.handTypesContainer}>
-                {Object.entries(HAND_TYPES).map(([key, config]) => (
+              <Text style={styles.headerSubtitle}>
+                {t.common.round} {currentRound} / 8
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={handleReset}
+              style={styles.headerSideBtn}
+            >
+              <Text style={styles.resetIconText}>↻</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* ===== SCOREBOARD TABLE ===== */}
+          <View style={styles.tableWrapper}>
+            <View style={styles.scoreTable}>
+              <View style={styles.tableHeader}>
+                {players.map((player, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={[
+                      styles.playerColHeader,
+                      selectedWinner === index && styles.playerColHeaderSelected,
+                    ]}
+                    onPress={() =>
+                      setSelectedWinner((prev) => (prev === index ? null : index))
+                    }
+                  >
+                    <Text
+                      style={[
+                        styles.tableHeaderText,
+                        selectedWinner === index &&
+                          styles.tableHeaderTextSelected,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {player.name || `${t.common.player} ${index + 1}`}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+                <View style={styles.roundColHeader}>
+                  <Text style={styles.tableHeaderText}>RND</Text>
+                </View>
+              </View>
+
+              <ScrollView
+                ref={tableScrollRef}
+                style={styles.tableBody}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={
+                  rounds.length === 0 ? styles.emptyTableContent : undefined
+                }
+              >
+                {rounds.length === 0 ? (
+                  <View style={styles.emptyRow}>
+                    <Text style={styles.emptyText}>. . .</Text>
+                  </View>
+                ) : (
+                  rounds.map((round, idx) => (
+                    <View key={idx} style={styles.tableRow}>
+                      {round.scores.map((score, cellIdx) => (
+                        <View
+                          key={cellIdx}
+                          style={styles.playerCol}
+                        >
+                          <Text style={styles.cellText}>{score}</Text>
+                        </View>
+                      ))}
+                      <View style={styles.roundCol}>
+                        <Text
+                          style={[
+                            styles.cellText,
+                            styles.roundNumText,
+                          ]}
+                        >
+                          {round.roundNumber}
+                        </Text>
+                      </View>
+                    </View>
+                  ))
+                )}
+              </ScrollView>
+            </View>
+          </View>
+
+          {/* ===== HAND TYPE + ADD ROUND (wireframe bottom) ===== */}
+          <View style={styles.controlsPanel}>
+            <Text style={styles.controlsSectionTitle}>
+              {t.handScoreboard.selectHandType}
+            </Text>
+            <View style={styles.handTypesGrid}>
+              {/* Row 1: first 3 hand types */}
+              <View style={styles.handTypesRow}>
+                {HAND_TYPE_ORDER.slice(0, 3).map((key) => (
                   <TouchableOpacity
                     key={key}
                     style={[
                       styles.handTypeButton,
                       selectedHandType === key && styles.handTypeButtonSelected,
                     ]}
-                    onPress={() => setSelectedHandType(key as HandType)}
+                    onPress={() =>
+                      setSelectedHandType((prev) => (prev === key ? null : key))
+                    }
                   >
                     <Text
                       style={[
@@ -457,127 +488,349 @@ export const HandScoreboard: React.FC<HandScoreboardProps> = memo(
                         selectedHandType === key &&
                           styles.handTypeButtonTextSelected,
                       ]}
+                      numberOfLines={2}
                     >
-                      {config.label}
+                      {HAND_TYPES[key].label}
                     </Text>
-                    <Text style={styles.handTypePoints}>
-                      {t.handScoreboard.points.winner}: {config.winnerPoints} |{" "}
-                      {t.handScoreboard.points.others}: +{config.othersPoints}
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {/* Row 2: last 3 hand types */}
+              <View style={styles.handTypesRow}>
+                {HAND_TYPE_ORDER.slice(3, 6).map((key) => (
+                  <TouchableOpacity
+                    key={key}
+                    style={[
+                      styles.handTypeButton,
+                      selectedHandType === key && styles.handTypeButtonSelected,
+                    ]}
+                    onPress={() =>
+                      setSelectedHandType((prev) => (prev === key ? null : key))
+                    }
+                  >
+                    <Text
+                      style={[
+                        styles.handTypeButtonText,
+                        selectedHandType === key &&
+                          styles.handTypeButtonTextSelected,
+                      ]}
+                      numberOfLines={2}
+                    >
+                      {HAND_TYPES[key].label}
                     </Text>
                   </TouchableOpacity>
                 ))}
               </View>
             </View>
 
-            {selectedWinner !== null && selectedHandType !== null && (
-              <View style={styles.section}>
-                <ActionButton
-                  label={t.handScoreboard.recordHand}
-                  onPress={handleWin}
-                  variant="primary"
-                />
+            {selectedWinner !== null && (
+              <View style={styles.nzolRow}>
+                <Text style={styles.nzolLabel}>{t.common.nzol}</Text>
+                {players.map((_, index) => (
+                  <TextInput
+                    key={index}
+                    style={styles.nzolInput}
+                    value={nzolValues[index]}
+                    onChangeText={(text) => {
+                      const numericValue = text.replace(/[^0-9.-]/g, "");
+                      const next = [...nzolValues];
+                      next[index] = numericValue;
+                      setNzolValues(next);
+                    }}
+                    placeholder="0"
+                    keyboardType="numeric"
+                  />
+                ))}
               </View>
             )}
-          </ScrollView>
+
+            <TouchableOpacity
+              style={[
+                styles.addRoundBtn,
+                (selectedWinner === null ||
+                  selectedHandType === null ||
+                  gameEnded) && styles.addRoundBtnDisabled,
+              ]}
+              onPress={handleWin}
+              disabled={
+                selectedWinner === null ||
+                selectedHandType === null ||
+                gameEnded
+              }
+            >
+              <Text style={styles.addRoundBtnText}>
+                {t.common.addRound}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </Animated.View>
       </SafeAreaView>
     );
   }
 );
 
-const DARK_SELECTED_BACKGROUND = "#002244";
-
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.background.primary },
-  wrapper: { flex: 1 },
-  container: { flex: 1 },
-  contentContainer: { padding: 12, paddingBottom: 20 },
+  safeArea: {
+    flex: 1,
+    backgroundColor: colors.background.primary,
+  },
+  wrapper: {
+    flex: 1,
+  },
+  container: {
+    flex: 1,
+  },
+  contentContainer: {
+    padding: 12,
+    paddingBottom: 20,
+  },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: colors.background.primary,
   },
+
+  /* ===== HEADER (same as Kout/Baloot) ===== */
   header: {
-    marginBottom: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    backgroundColor: colors.background.primary,
+    borderBottomWidth: 2,
+    borderBottomColor: colors.border.default,
   },
-  backButton: { paddingVertical: 8, paddingHorizontal: 4, minWidth: 50 },
-  backButtonText: { fontSize: 18, color: colors.accent.red, fontWeight: "600" },
-  headerCenter: { flex: 1, alignItems: "center", justifyContent: "center" },
-  title: { ...typography.heading, textAlign: "center" },
-  subtitle: { fontSize: 16, color: colors.text.secondary, marginTop: 4 },
-  roundIndicator: { fontSize: 14, color: colors.text.secondary, marginTop: 2 },
-  resetIconButton: {
+  headerSideBtn: {
     paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingHorizontal: 4,
     minWidth: 50,
-    alignItems: "flex-end",
+    alignItems: "center",
   },
-  resetIconText: { fontSize: 28, color: colors.accent.red, fontWeight: "600" },
-  playersContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-    marginBottom: 20,
+  backText: {
+    fontSize: 24,
+    color: colors.accent.red,
+    fontWeight: "600",
   },
-  playerCardWrapper: { flex: 1, minWidth: "45%", gap: 8 },
-  playerCard: { ...cardBase, padding: 12, alignItems: "center" },
-  playerCardSelected: {
-    borderColor: DARK_SELECTED_BACKGROUND,
-    backgroundColor: DARK_SELECTED_BACKGROUND,
-    borderWidth: 3,
+  headerCenter: {
+    flex: 1,
+    alignItems: "center",
   },
-  winningPlayer: { borderColor: colors.accent.green, borderWidth: 1 },
-  playerCardContent: { alignItems: "center", width: "100%" },
-  playerNameInput: {
+  headerTitle: {
+    ...typography.heading,
+    fontSize: 20,
+    textAlign: "center",
+  },
+  headerSubtitle: {
     fontSize: 14,
-    fontWeight: "bold",
-    color: colors.text.primary,
-    textAlign: "center",
-    marginBottom: 4,
-    width: "100%",
+    color: colors.text.secondary,
+    marginTop: 2,
   },
-  playerNameInputSelected: {
-    color: "#ffffff",
+  resetIconText: {
+    fontSize: 24,
+    color: colors.accent.red,
+    fontWeight: "600",
   },
-  scoreContainer: { height: 40, justifyContent: "center" },
-  playerScore: { ...typography.scoreSmall, color: colors.accent.red },
-  playerScoreSelected: {
-    color: "#ffffff",
+
+  /* ===== SCORE TABLE ===== */
+  tableWrapper: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
+    minHeight: 120,
   },
-  nzolInput: {
-    width: "100%",
-    borderWidth: 1,
-    borderColor: colors.border.accent,
-    borderRadius: 8,
-    padding: 8,
-    textAlign: "center",
+  scoreTable: {
+    flex: 1,
+    borderWidth: 2,
+    borderColor: colors.border.default,
+    borderRadius: 16,
+    overflow: "hidden",
     backgroundColor: colors.background.card,
   },
-  section: { marginVertical: 12 },
+  tableHeader: {
+    flexDirection: "row",
+    backgroundColor: colors.background.secondary,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.light,
+  },
+  playerColHeader: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 4,
+  },
+  playerColHeaderSelected: {
+    backgroundColor: colors.accent.blue,
+  },
+  roundColHeader: {
+    flex: 0.5,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tableHeaderText: {
+    fontWeight: "700",
+    fontSize: 11,
+    textAlign: "center",
+    letterSpacing: 0.3,
+    color: colors.text.muted,
+  },
+  tableHeaderTextSelected: {
+    color: "#fff",
+  },
+  tableBody: {
+    flex: 1,
+  },
+  emptyTableContent: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    minHeight: 80,
+  },
+  tableRow: {
+    flexDirection: "row",
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.light,
+  },
+  playerCol: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  roundCol: {
+    flex: 0.5,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cellText: {
+    fontSize: 15,
+    fontWeight: "600",
+    textAlign: "center",
+    color: colors.text.primary,
+  },
+  roundNumText: {
+    color: colors.text.muted,
+    fontSize: 13,
+  },
+  emptyRow: {
+    paddingVertical: 24,
+    alignItems: "center",
+  },
+  emptyText: {
+    color: colors.text.muted,
+    fontSize: 16,
+    letterSpacing: 6,
+  },
+
+  /* ===== BOTTOM: HAND TYPE + ADD ROUND ===== */
+  controlsPanel: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 20,
+    borderTopWidth: 1,
+    borderTopColor: colors.border.light,
+    backgroundColor: colors.background.primary,
+  },
+  controlsSectionTitle: {
+    ...typography.subheading,
+    fontSize: 16,
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  handTypesGrid: {
+    marginBottom: 12,
+  },
+  handTypesRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 8,
+  },
+  handTypeButton: {
+    ...cardBase,
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 6,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  handTypeButtonSelected: {
+    borderColor: colors.accent.blue,
+    backgroundColor: colors.accent.blue + "20",
+    borderWidth: 2,
+  },
+  handTypeButtonText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: colors.text.primary,
+    textAlign: "center",
+  },
+  handTypeButtonTextSelected: {
+    color: colors.accent.blue,
+  },
+  nzolRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 6,
+    marginBottom: 10,
+  },
+  nzolLabel: {
+    fontSize: 12,
+    color: colors.text.secondary,
+    width: 36,
+  },
+  nzolInput: {
+    flex: 1,
+    minWidth: 50,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+    borderRadius: 8,
+    padding: 6,
+    textAlign: "center",
+    backgroundColor: colors.background.card,
+    fontSize: 14,
+  },
+  addRoundBtn: {
+    backgroundColor: colors.accent.red,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  addRoundBtnDisabled: {
+    opacity: 0.5,
+  },
+  addRoundBtnText: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#fff",
+  },
+
+  /* Game over / podium */
+  savedIndicator: {
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  savedText: {
+    fontSize: 14,
+    color: colors.accent.green,
+    fontWeight: "600",
+  },
+  section: {
+    marginVertical: 12,
+    alignItems: "center",
+  },
   sectionTitle: {
     ...typography.subheading,
     fontSize: 18,
     marginBottom: 12,
     textAlign: "center",
   },
-  handTypesContainer: { gap: 8 },
-  handTypeButton: { ...cardBase, padding: 12 },
-  handTypeButtonSelected: {
-    backgroundColor: colors.accent.red + "10",
-    borderColor: colors.accent.red,
-  },
-  handTypeButtonText: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: colors.text.primary,
-    marginBottom: 4,
-  },
-  handTypeButtonTextSelected: { color: colors.accent.red },
-  handTypePoints: { fontSize: 12, color: colors.text.secondary },
   podiumContainer: {
     flexDirection: "row",
     justifyContent: "center",
@@ -616,6 +869,4 @@ const styles = StyleSheet.create({
   },
   roundNumber: { fontSize: 14, fontWeight: "bold", color: colors.accent.red },
   roundWinner: { fontSize: 14, color: colors.text.primary },
-  savedIndicator: { alignItems: "center", marginBottom: 12 },
-  savedText: { fontSize: 14, color: colors.accent.green, fontWeight: "600" },
 });

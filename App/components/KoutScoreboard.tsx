@@ -1,4 +1,4 @@
-import React, { useState, memo } from "react";
+import React, { useState, useRef, memo } from "react";
 import {
   View,
   Text,
@@ -25,10 +25,11 @@ interface KoutScoreboardProps {
 interface RoundRecord {
   id: string;
   round: number;
+  selectedTeam: 1 | 2;
+  handType: string;
+  won: boolean;
   team1Score: number;
   team2Score: number;
-  team1HandType: string;
-  team2HandType: string;
 }
 
 // Correct scoring logic for each hand type
@@ -70,6 +71,8 @@ const KoutScoreboardContent = memo(
     const [showGameSummary, setShowGameSummary] = useState(false);
     const [team1Name, setTeam1Name] = useState(team1.name || "Team 1");
     const [team2Name, setTeam2Name] = useState(team2.name || "Team 2");
+    const [editingTeam, setEditingTeam] = useState<1 | 2 | null>(null);
+    const scrollViewRef = useRef<ScrollView>(null);
     const swipeHandlers = useSwipeToGoBack({ onBack });
 
     const winner =
@@ -104,10 +107,11 @@ const KoutScoreboardContent = memo(
       const newRound: RoundRecord = {
         id: `round-${Date.now()}`,
         round: roundHistory.length + 1,
+        selectedTeam: selectedTeam,
+        handType: selectedHandType,
+        won: selectedTeamWon,
         team1Score: newTeam1Score,
         team2Score: newTeam2Score,
-        team1HandType: selectedHandType,
-        team2HandType: selectedHandType,
       };
 
       setRoundHistory([...roundHistory, newRound]);
@@ -118,6 +122,11 @@ const KoutScoreboardContent = memo(
 
       setSelectedTeam(null);
       setSelectedHandType(null);
+
+      // Auto-scroll to bottom of table
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, 100);
     };
 
     const checkGameEnd = (t1Score: number, t2Score: number) => {
@@ -204,6 +213,18 @@ const KoutScoreboardContent = memo(
       setGameEnded(false);
     };
 
+    // Format the display for a team cell in a round row
+    const formatTeamCell = (round: RoundRecord, teamNumber: 1 | 2): string => {
+      const score = teamNumber === 1 ? round.team1Score : round.team2Score;
+      if (round.selectedTeam === teamNumber) {
+        // This team was selected — show score / hand type
+        return `${score} / ${round.handType}`;
+      } else {
+        // This team was NOT selected — show score / -
+        return `${score} / -`;
+      }
+    };
+
     if (isLoading) {
       return (
         <View style={styles.loadingContainer}>
@@ -219,275 +240,249 @@ const KoutScoreboardContent = memo(
       >
         {/* ===== HEADER ===== */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={onBack} style={styles.headerSideButton}>
-            <Text style={styles.backButtonText}>←</Text>
+          <TouchableOpacity onPress={onBack} style={styles.headerSideBtn}>
+            <Text style={styles.backText}>←</Text>
           </TouchableOpacity>
           <View style={styles.headerCenter}>
-            <Text style={styles.title}>{t.games.kout.name}</Text>
+            <Text style={styles.headerTitle}>{t.games.kout.name}</Text>
           </View>
           <TouchableOpacity
             onPress={handleUndoRound}
             disabled={roundHistory.length === 0 || gameEnded}
             style={[
-              styles.headerSideButton,
-              (roundHistory.length === 0 || gameEnded) &&
-                styles.undoButtonDisabled,
+              styles.headerSideBtn,
+              (roundHistory.length === 0 || gameEnded) && styles.disabledBtn,
             ]}
           >
-            <Text style={styles.undoButtonText}>↶</Text>
+            <Text style={styles.undoText}>↶</Text>
           </TouchableOpacity>
         </View>
 
-        {/* ===== MAIN CONTENT (scrollable) ===== */}
-        <View style={styles.mainContent}>
-          {/* ===== TOP SECTION: Teams + Score Table ===== */}
-          <View style={styles.topSection}>
-            {/* Team Names + Total Scores */}
-            <View style={styles.teamsRow}>
-              <View style={styles.teamBlock}>
-                <TextInput
-                  style={styles.teamNameInput}
-                  value={team1Name}
-                  onChangeText={(text) => {
-                    setTeam1Name(text);
-                    updateTeam1({ name: text });
-                  }}
-                  placeholder="Team 1"
-                  placeholderTextColor={colors.text.muted}
-                  editable={!gameEnded}
-                />
-                <Text style={styles.teamTotalScore}>{team1.score}</Text>
-              </View>
-
-              <View style={styles.teamsDivider}>
-                <Text style={styles.vsText}>vs</Text>
-              </View>
-
-              <View style={styles.teamBlock}>
-                <TextInput
-                  style={styles.teamNameInput}
-                  value={team2Name}
-                  onChangeText={(text) => {
-                    setTeam2Name(text);
-                    updateTeam2({ name: text });
-                  }}
-                  placeholder="Team 2"
-                  placeholderTextColor={colors.text.muted}
-                  editable={!gameEnded}
-                />
-                <Text style={styles.teamTotalScore}>{team2.score}</Text>
-              </View>
-            </View>
-
-            {/* Score Table */}
-            <View style={styles.scoreTable}>
-              {/* Table Header */}
-              <View style={styles.tableHeader}>
-                <Text style={[styles.tableHeaderCell, styles.roundCol]}>
-                  RND
-                </Text>
-                <Text
-                  style={[
-                    styles.tableHeaderCell,
-                    styles.teamCol,
-                    { color: colors.accent.blue },
-                  ]}
-                >
-                  {team1Name}
-                </Text>
-                <Text
-                  style={[
-                    styles.tableHeaderCell,
-                    styles.teamCol,
-                    { color: colors.accent.red },
-                  ]}
-                >
-                  {team2Name}
-                </Text>
-              </View>
-
-              {/* Table Rows */}
-              <ScrollView
-                style={styles.tableBody}
-                showsVerticalScrollIndicator={false}
-                nestedScrollEnabled={true}
-              >
-                {roundHistory.length === 0 ? (
-                  <View style={styles.emptyRow}>
-                    <Text style={styles.emptyRowText}>. . .</Text>
-                  </View>
+        {/* ===== SCORE TABLE (fills available space) ===== */}
+        <View style={styles.tableWrapper}>
+          <View style={styles.scoreTable}>
+            {/* Table Header with clickable team names */}
+            <View style={styles.tableHeader}>
+              <View style={styles.teamColHeader}>
+                {editingTeam === 1 ? (
+                  <TextInput
+                    style={styles.teamNameInput}
+                    value={team1Name}
+                    onChangeText={(text) => {
+                      setTeam1Name(text);
+                      updateTeam1({ name: text });
+                    }}
+                    onBlur={() => setEditingTeam(null)}
+                    autoFocus
+                    selectTextOnFocus
+                  />
                 ) : (
-                  roundHistory.map((round) => (
-                    <View key={round.id} style={styles.tableRow}>
-                      <Text
-                        style={[
-                          styles.tableCell,
-                          styles.roundCol,
-                          styles.roundNumText,
-                        ]}
-                      >
-                        {round.round}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.tableCell,
-                          styles.teamCol,
-                          styles.team1CellText,
-                        ]}
-                      >
-                        {round.team1Score} / {round.team1HandType}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.tableCell,
-                          styles.teamCol,
-                          styles.team2CellText,
-                        ]}
-                      >
-                        {round.team2Score} / {round.team2HandType}
-                      </Text>
-                    </View>
-                  ))
+                  <TouchableOpacity onPress={() => setEditingTeam(1)}>
+                    <Text style={[styles.tableHeaderText, styles.team1Color]}>
+                      {team1Name}
+                    </Text>
+                  </TouchableOpacity>
                 )}
-              </ScrollView>
-            </View>
-          </View>
-
-          {/* ===== BOTTOM SECTION: Controls ===== */}
-          <View style={styles.bottomSection}>
-            {/* Team Selection Buttons */}
-            <View style={styles.teamSelectRow}>
-              <TouchableOpacity
-                style={[
-                  styles.teamSelectButton,
-                  selectedTeam === 1 && styles.teamSelectButtonActive,
-                ]}
-                onPress={() => setSelectedTeam((c) => (c === 1 ? null : 1))}
-                disabled={gameEnded}
-              >
-                <Text
-                  style={[
-                    styles.teamSelectButtonText,
-                    selectedTeam === 1 && styles.teamSelectButtonTextActive,
-                  ]}
-                >
-                  {team1Name}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.teamSelectButton,
-                  selectedTeam === 2 && styles.teamSelectButtonActive,
-                ]}
-                onPress={() => setSelectedTeam((c) => (c === 2 ? null : 2))}
-                disabled={gameEnded}
-              >
-                <Text
-                  style={[
-                    styles.teamSelectButtonText,
-                    selectedTeam === 2 && styles.teamSelectButtonTextActive,
-                  ]}
-                >
-                  {team2Name}
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Hand Type Grid */}
-            {selectedTeam !== null && !gameEnded && (
-              <View style={styles.handTypesGrid}>
-                <View style={styles.handTypeRow}>
-                  {["M", "6", "8"].map((ht) => (
-                    <TouchableOpacity
-                      key={ht}
-                      style={[
-                        styles.handTypeButton,
-                        selectedHandType === ht &&
-                          styles.handTypeButtonSelected,
-                      ]}
-                      onPress={() => setSelectedHandType(ht)}
-                    >
-                      <Text
-                        style={[
-                          styles.handTypeButtonText,
-                          selectedHandType === ht &&
-                            styles.handTypeButtonTextSelected,
-                        ]}
-                      >
-                        {ht}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-                <View style={styles.handTypeRow}>
-                  {["5", "7", "9"].map((ht) => (
-                    <TouchableOpacity
-                      key={ht}
-                      style={[
-                        styles.handTypeButton,
-                        selectedHandType === ht &&
-                          styles.handTypeButtonSelected,
-                      ]}
-                      onPress={() => setSelectedHandType(ht)}
-                    >
-                      <Text
-                        style={[
-                          styles.handTypeButtonText,
-                          selectedHandType === ht &&
-                            styles.handTypeButtonTextSelected,
-                        ]}
-                      >
-                        {ht}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
               </View>
-            )}
+              <View style={styles.teamColHeader}>
+                {editingTeam === 2 ? (
+                  <TextInput
+                    style={styles.teamNameInput}
+                    value={team2Name}
+                    onChangeText={(text) => {
+                      setTeam2Name(text);
+                      updateTeam2({ name: text });
+                    }}
+                    onBlur={() => setEditingTeam(null)}
+                    autoFocus
+                    selectTextOnFocus
+                  />
+                ) : (
+                  <TouchableOpacity onPress={() => setEditingTeam(2)}>
+                    <Text style={[styles.tableHeaderText, styles.team2Color]}>
+                      {team2Name}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              <View style={styles.roundColHeader}>
+                <Text style={styles.tableHeaderText}>RND</Text>
+              </View>
+            </View>
 
-            {/* Win / Loss Buttons */}
-            {selectedTeam !== null &&
-              selectedHandType !== null &&
-              !gameEnded && (
-                <View style={styles.winLossRow}>
-                  <TouchableOpacity
-                    style={styles.winButton}
-                    onPress={() => handleRecordRound(true)}
-                  >
-                    <Text style={styles.winButtonText}>{t.common.win}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.lossButton}
-                    onPress={() => handleRecordRound(false)}
-                  >
-                    <Text style={styles.lossButtonText}>{t.common.lose}</Text>
-                  </TouchableOpacity>
+            {/* Table Body (scrollable) */}
+            <ScrollView
+              ref={scrollViewRef}
+              style={styles.tableBody}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={
+                roundHistory.length === 0 ? styles.emptyTableContent : undefined
+              }
+            >
+              {roundHistory.length === 0 ? (
+                <View style={styles.emptyRow}>
+                  <Text style={styles.emptyText}>. . .</Text>
                 </View>
+              ) : (
+                roundHistory.map((round) => (
+                  <View key={round.id} style={styles.tableRow}>
+                    <Text style={[styles.cellText, styles.teamCol]}>
+                      {formatTeamCell(round, 1)}
+                    </Text>
+                    <Text style={[styles.cellText, styles.teamCol]}>
+                      {formatTeamCell(round, 2)}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.cellText,
+                        styles.roundCol,
+                        styles.roundNumText,
+                      ]}
+                    >
+                      {round.round}
+                    </Text>
+                  </View>
+                ))
               )}
-
-            {/* Reset Game */}
-            <TouchableOpacity style={styles.resetButton} onPress={handleReset}>
-              <Text style={styles.resetButtonText}>{t.common.resetGame}</Text>
-            </TouchableOpacity>
-
-            {/* Save Game */}
-            {(team1.score > 0 || team2.score > 0) && user && !gameSaved && (
-              <View style={styles.saveSection}>
-                <ActionButton
-                  label={t.common?.saveGame || "Save Game"}
-                  onPress={handleSaveGame}
-                  variant="secondary"
-                />
-              </View>
-            )}
-
-            {gameSaved && (
-              <Text style={styles.savedText}>
-                ✓ {t.common?.gameSaved || "Game Saved"}
-              </Text>
-            )}
+            </ScrollView>
           </View>
+        </View>
+
+        {/* ===== BOTTOM CONTROLS (always visible) ===== */}
+        <View style={styles.controlsPanel}>
+          {/* Team Select Buttons */}
+          <View style={styles.controlRow}>
+            <TouchableOpacity
+              style={[
+                styles.teamBtn,
+                selectedTeam === 1 && styles.teamBtnActive,
+              ]}
+              onPress={() => setSelectedTeam(selectedTeam === 1 ? null : 1)}
+              disabled={gameEnded}
+            >
+              <Text
+                style={[
+                  styles.teamBtnText,
+                  selectedTeam === 1 && styles.teamBtnTextActive,
+                ]}
+              >
+                {team1Name}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.teamBtn,
+                selectedTeam === 2 && styles.teamBtnActive,
+              ]}
+              onPress={() => setSelectedTeam(selectedTeam === 2 ? null : 2)}
+              disabled={gameEnded}
+            >
+              <Text
+                style={[
+                  styles.teamBtnText,
+                  selectedTeam === 2 && styles.teamBtnTextActive,
+                ]}
+              >
+                {team2Name}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Hand Type Grid (always visible) */}
+          <View style={styles.handGrid}>
+            <View style={styles.handRow}>
+              {["M", "6", "8"].map((ht) => (
+                <TouchableOpacity
+                  key={ht}
+                  style={[
+                    styles.handBtn,
+                    selectedHandType === ht && styles.handBtnActive,
+                  ]}
+                  onPress={() =>
+                    setSelectedHandType(selectedHandType === ht ? null : ht)
+                  }
+                  disabled={gameEnded}
+                >
+                  <Text
+                    style={[
+                      styles.handBtnText,
+                      selectedHandType === ht && styles.handBtnTextActive,
+                    ]}
+                  >
+                    {ht}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={styles.handRow}>
+              {["5", "7", "9"].map((ht) => (
+                <TouchableOpacity
+                  key={ht}
+                  style={[
+                    styles.handBtn,
+                    selectedHandType === ht && styles.handBtnActive,
+                  ]}
+                  onPress={() =>
+                    setSelectedHandType(selectedHandType === ht ? null : ht)
+                  }
+                  disabled={gameEnded}
+                >
+                  <Text
+                    style={[
+                      styles.handBtnText,
+                      selectedHandType === ht && styles.handBtnTextActive,
+                    ]}
+                  >
+                    {ht}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          {/* Win / Loss Buttons (always visible) */}
+          <View style={styles.controlRow}>
+            <TouchableOpacity
+              style={[styles.winBtn, gameEnded && styles.disabledBtn]}
+              onPress={() => handleRecordRound(true)}
+              disabled={
+                gameEnded || selectedTeam === null || selectedHandType === null
+              }
+            >
+              <Text style={styles.winBtnText}>{t.common.win}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.lossBtn, gameEnded && styles.disabledBtn]}
+              onPress={() => handleRecordRound(false)}
+              disabled={
+                gameEnded || selectedTeam === null || selectedHandType === null
+              }
+            >
+              <Text style={styles.lossBtnText}>{t.common.lose}</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Reset Game */}
+          <TouchableOpacity style={styles.resetBtn} onPress={handleReset}>
+            <Text style={styles.resetBtnText}>{t.common.resetGame}</Text>
+          </TouchableOpacity>
+
+          {/* Save Game */}
+          {(team1.score > 0 || team2.score > 0) && user && !gameSaved && (
+            <View style={styles.saveSection}>
+              <ActionButton
+                label={t.common?.saveGame || "Save Game"}
+                onPress={handleSaveGame}
+                variant="secondary"
+              />
+            </View>
+          )}
+
+          {gameSaved && (
+            <Text style={styles.savedText}>
+              ✓ {t.common?.gameSaved || "Game Saved"}
+            </Text>
+          )}
         </View>
 
         {/* ===== GAME SUMMARY MODAL ===== */}
@@ -502,12 +497,10 @@ const KoutScoreboardContent = memo(
               <Text style={styles.modalTitle}>
                 {t.koutScoreboard.gameEnded}
               </Text>
-
               <View style={styles.modalWinnerBlock}>
                 <Text style={styles.modalWinnerLabel}>Winner</Text>
                 <Text style={styles.modalWinnerName}>{winner}</Text>
               </View>
-
               <View style={styles.modalScoresRow}>
                 <View style={styles.modalScoreBlock}>
                   <Text style={styles.modalScoreTeam}>{team1Name}</Text>
@@ -519,8 +512,7 @@ const KoutScoreboardContent = memo(
                   <Text style={styles.modalScoreValue}>{team2.score}</Text>
                 </View>
               </View>
-
-              <View style={styles.modalButtons}>
+              <View style={styles.modalBtns}>
                 <ActionButton
                   label={t.common.newGame}
                   onPress={handleNewGame}
@@ -556,29 +548,10 @@ export const KoutScoreboard: React.FC<KoutScoreboardProps> = memo(
 );
 
 const styles = StyleSheet.create({
-  // ===== LAYOUT =====
+  /* ===== LAYOUT ===== */
   wrapper: {
     flex: 1,
     backgroundColor: colors.background.primary,
-  },
-  mainContent: {
-    flex: 1,
-    justifyContent: "space-between",
-  },
-  topSection: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-  },
-  bottomSection: {
-    paddingHorizontal: 16,
-    paddingBottom: 24,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: colors.border.light,
-    backgroundColor: colors.background.secondary,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
   },
   loadingContainer: {
     flex: 1,
@@ -591,7 +564,7 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
   },
 
-  // ===== HEADER =====
+  /* ===== HEADER ===== */
   header: {
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -602,13 +575,13 @@ const styles = StyleSheet.create({
     borderBottomWidth: 2,
     borderBottomColor: colors.border.default,
   },
-  headerSideButton: {
+  headerSideBtn: {
     paddingVertical: 8,
     paddingHorizontal: 4,
     minWidth: 50,
     alignItems: "center",
   },
-  backButtonText: {
+  backText: {
     fontSize: 24,
     color: colors.accent.red,
     fontWeight: "600",
@@ -617,62 +590,27 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
   },
-  title: {
+  headerTitle: {
     ...typography.heading,
     fontSize: 20,
     textAlign: "center",
   },
-  undoButtonDisabled: {
-    opacity: 0.3,
-  },
-  undoButtonText: {
+  undoText: {
     fontSize: 24,
     color: colors.accent.blue,
     fontWeight: "600",
   },
-
-  // ===== TEAMS ROW (TOP) =====
-  teamsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 12,
+  disabledBtn: {
+    opacity: 0.3,
   },
-  teamBlock: {
+
+  /* ===== SCORE TABLE ===== */
+  tableWrapper: {
     flex: 1,
-    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
   },
-  teamNameInput: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: colors.text.primary,
-    textAlign: "center",
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border.light,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    minWidth: 100,
-    letterSpacing: 0.3,
-  },
-  teamTotalScore: {
-    fontSize: 42,
-    fontWeight: "800",
-    color: colors.accent.red,
-    marginTop: 4,
-    letterSpacing: 1,
-  },
-  teamsDivider: {
-    paddingHorizontal: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  vsText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.text.muted,
-    marginTop: 20,
-  },
-
-  // ===== SCORE TABLE =====
   scoreTable: {
     flex: 1,
     borderWidth: 2,
@@ -680,7 +618,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: "hidden",
     backgroundColor: colors.background.card,
-    marginBottom: 8,
   },
   tableHeader: {
     flexDirection: "row",
@@ -690,63 +627,101 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border.light,
   },
-  tableHeaderCell: {
+  teamColHeader: {
+    flex: 1.3,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  roundColHeader: {
+    flex: 0.6,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tableHeaderText: {
     fontWeight: "700",
-    fontSize: 11,
+    fontSize: 13,
     textAlign: "center",
     letterSpacing: 0.5,
     textTransform: "uppercase",
     color: colors.text.muted,
   },
-  roundCol: {
-    flex: 0.6,
+  team1Color: {
+    color: colors.accent.blue,
   },
-  teamCol: {
-    flex: 1.2,
+  team2Color: {
+    color: colors.accent.red,
+  },
+  teamNameInput: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.text.primary,
+    textAlign: "center",
+    borderBottomWidth: 1,
+    borderBottomColor: colors.accent.gold,
+    paddingVertical: 2,
+    paddingHorizontal: 4,
+    minWidth: 80,
   },
   tableBody: {
     flex: 1,
   },
+  emptyTableContent: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   tableRow: {
     flexDirection: "row",
-    paddingVertical: 12,
+    paddingVertical: 14,
     paddingHorizontal: 8,
     borderBottomWidth: 1,
     borderBottomColor: colors.border.light,
   },
-  tableCell: {
-    fontSize: 16,
+  cellText: {
+    fontSize: 17,
     fontWeight: "700",
     textAlign: "center",
-    letterSpacing: 0.2,
+    color: colors.text.primary,
+  },
+  teamCol: {
+    flex: 1.3,
+  },
+  roundCol: {
+    flex: 0.6,
   },
   roundNumText: {
     color: colors.text.muted,
-    fontSize: 13,
-  },
-  team1CellText: {
-    color: colors.text.primary,
-  },
-  team2CellText: {
-    color: colors.text.primary,
+    fontSize: 14,
   },
   emptyRow: {
-    paddingVertical: 20,
+    paddingVertical: 40,
     alignItems: "center",
   },
-  emptyRowText: {
+  emptyText: {
     color: colors.text.muted,
-    fontSize: 14,
-    letterSpacing: 4,
+    fontSize: 16,
+    letterSpacing: 6,
   },
 
-  // ===== TEAM SELECT BUTTONS =====
-  teamSelectRow: {
+  /* ===== BOTTOM CONTROLS ===== */
+  controlsPanel: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 20,
+    borderTopWidth: 1,
+    borderTopColor: colors.border.light,
+    backgroundColor: colors.background.secondary,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+  },
+  controlRow: {
     flexDirection: "row",
     gap: 10,
-    marginBottom: 12,
+    marginBottom: 10,
   },
-  teamSelectButton: {
+
+  /* Team Select */
+  teamBtn: {
     flex: 1,
     paddingVertical: 12,
     alignItems: "center",
@@ -756,30 +731,29 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: colors.border.default,
   },
-  teamSelectButtonActive: {
+  teamBtnActive: {
     backgroundColor: colors.accent.blue,
     borderColor: colors.accent.blue,
   },
-  teamSelectButtonText: {
+  teamBtnText: {
     fontSize: 15,
     fontWeight: "700",
     color: colors.text.primary,
-    letterSpacing: 0.3,
   },
-  teamSelectButtonTextActive: {
+  teamBtnTextActive: {
     color: colors.background.primary,
   },
 
-  // ===== HAND TYPE GRID =====
-  handTypesGrid: {
+  /* Hand Type Grid */
+  handGrid: {
     gap: 8,
-    marginBottom: 12,
+    marginBottom: 10,
   },
-  handTypeRow: {
+  handRow: {
     flexDirection: "row",
     gap: 8,
   },
-  handTypeButton: {
+  handBtn: {
     flex: 1,
     paddingVertical: 14,
     alignItems: "center",
@@ -787,26 +761,20 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: colors.border.default,
   },
-  handTypeButtonSelected: {
+  handBtnActive: {
     backgroundColor: colors.accent.gold,
   },
-  handTypeButtonText: {
+  handBtnText: {
     fontSize: 20,
     fontWeight: "800",
     color: colors.background.primary,
-    letterSpacing: 0.3,
   },
-  handTypeButtonTextSelected: {
+  handBtnTextActive: {
     color: colors.text.primary,
   },
 
-  // ===== WIN / LOSS BUTTONS =====
-  winLossRow: {
-    flexDirection: "row",
-    gap: 10,
-    marginBottom: 12,
-  },
-  winButton: {
+  /* Win / Loss */
+  winBtn: {
     flex: 1,
     paddingVertical: 16,
     alignItems: "center",
@@ -814,14 +782,14 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: colors.accent.green,
   },
-  winButtonText: {
+  winBtnText: {
     fontSize: 18,
     fontWeight: "800",
     color: colors.background.primary,
     letterSpacing: 1,
     textTransform: "uppercase",
   },
-  lossButton: {
+  lossBtn: {
     flex: 1,
     paddingVertical: 16,
     alignItems: "center",
@@ -829,7 +797,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: colors.accent.red,
   },
-  lossButtonText: {
+  lossBtnText: {
     fontSize: 18,
     fontWeight: "800",
     color: colors.background.primary,
@@ -837,13 +805,13 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
 
-  // ===== RESET / SAVE =====
-  resetButton: {
+  /* Reset / Save */
+  resetBtn: {
     alignItems: "center",
-    paddingVertical: 10,
+    paddingVertical: 8,
     marginBottom: 4,
   },
-  resetButtonText: {
+  resetBtnText: {
     fontSize: 12,
     fontWeight: "600",
     color: colors.text.muted,
@@ -851,17 +819,17 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   saveSection: {
-    marginTop: 8,
+    marginTop: 4,
   },
   savedText: {
     fontSize: 14,
     color: colors.accent.green,
     fontWeight: "600",
     textAlign: "center",
-    marginTop: 8,
+    marginTop: 4,
   },
 
-  // ===== MODAL =====
+  /* ===== MODAL ===== */
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.7)",
@@ -899,7 +867,6 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: "800",
     color: colors.accent.red,
-    letterSpacing: 0.5,
   },
   modalScoresRow: {
     flexDirection: "row",
@@ -923,14 +890,13 @@ const styles = StyleSheet.create({
     fontSize: 36,
     fontWeight: "800",
     color: colors.accent.red,
-    letterSpacing: 0.5,
   },
   modalVs: {
     fontSize: 14,
     fontWeight: "600",
     color: colors.text.muted,
   },
-  modalButtons: {
+  modalBtns: {
     width: "100%",
     gap: 12,
   },
